@@ -6,6 +6,14 @@ Research paper:
 https://arxiv.org/pdf/1612.00593.pdf
 
 ## Update
+**2023/03/27**
+Testing environment:
+-WSL2 on Windows 11
+-Ubuntu 20.04
+-Python 3.7
+-Pytorch 1.13.1
+-Cuda 11.7
+
 **2021/03/27:** 
 
 (1) Release pre-trained models for semantic segmentation, where PointNet++ can achieve **53.5\%** mIoU.
