@@ -2579,3 +2579,5 @@
 2021-03-27 11:05:14,628 - Model - INFO - Best accuracy is: 0.94388
 2021-03-27 11:05:14,628 - Model - INFO - Best class avg mIOU is: 0.82608
 2021-03-27 11:05:14,629 - Model - INFO - Best inctance avg mIOU is: 0.85405
+2023-07-27 14:45:44,083 - Model - INFO - PARAMETER ...
+2023-07-27 14:45:44,083 - Model - INFO - Namespace(batch_size=16, decay_rate=0.0001, epoch=251, gpu='1', learning_rate=0.001, log_dir='pointnet2_part_seg_msg', lr_decay=0.5, model='pointnet2_part_seg_msg', normal=True, npoint=2048, optimizer='Adam', step_size=20)

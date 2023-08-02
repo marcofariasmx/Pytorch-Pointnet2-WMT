@@ -17,18 +17,13 @@ from pathlib import Path
 from tqdm import tqdm
 from data_utils.ShapeNetDataLoader import PartNormalDataset
 
+sys.path.append('C:\\Users\\marco\\PycharmProjects\\PointBluePython')
+
+from MachineLearningAutomation.Datasets import RackDataset
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
-
-seg_classes = {'Earphone': [16, 17, 18], 'Motorbike': [30, 31, 32, 33, 34, 35], 'Rocket': [41, 42, 43],
-               'Car': [8, 9, 10, 11], 'Laptop': [28, 29], 'Cap': [6, 7], 'Skateboard': [44, 45, 46], 'Mug': [36, 37],
-               'Guitar': [19, 20, 21], 'Bag': [4, 5], 'Lamp': [24, 25, 26, 27], 'Table': [47, 48, 49],
-               'Airplane': [0, 1, 2, 3], 'Pistol': [38, 39, 40], 'Chair': [12, 13, 14, 15], 'Knife': [22, 23]}
-seg_label_to_cat = {}  # {0:Airplane, 1:Airplane, ...49:Table}
-for cat in seg_classes.keys():
-    for label in seg_classes[cat]:
-        seg_label_to_cat[label] = cat
 
 
 def inplace_relu(m):
@@ -36,11 +31,11 @@ def inplace_relu(m):
     if classname.find('ReLU') != -1:
         m.inplace=True
 
-def to_categorical(y, num_classes):
+def to_categorical(y, num_classes, device):
     """ 1-hot encodes a tensor """
     new_y = torch.eye(num_classes)[y.cpu().data.numpy(),]
     if (y.is_cuda):
-        return new_y.cuda()
+        return new_y.to(device)
     return new_y
 
 
@@ -55,9 +50,11 @@ def parse_args():
     parser.add_argument('--log_dir', type=str, default=None, help='log path')
     parser.add_argument('--decay_rate', type=float, default=1e-4, help='weight decay')
     parser.add_argument('--npoint', type=int, default=2048, help='point Number')
-    parser.add_argument('--normal', action='store_true', default=False, help='use normals')
+    parser.add_argument('--normal', action='store_true', default=True, help='use normals')
     parser.add_argument('--step_size', type=int, default=20, help='decay step for lr decay')
     parser.add_argument('--lr_decay', type=float, default=0.5, help='decay rate for lr decay')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
+                        help='Device to use (cuda or cpu)')
 
     return parser.parse_args()
 
@@ -68,7 +65,14 @@ def main(args):
         print(str)
 
     '''HYPER PARAMETER'''
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        raise ValueError("CUDA is not available. Please use --device cpu or make sure CUDA is installed and compatible.")
+
+    if args.device == 'cuda':
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
 
     '''CREATE DIR'''
     timestr = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
@@ -98,25 +102,47 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    root = 'data/shapenetcore_partanno_segmentation_benchmark_v0_normal/'
+    #facilities_root = r'C:\Users\M0x1\OneDrive\MachineLearningAutomation\FacilitiesX10New'
 
-    TRAIN_DATASET = PartNormalDataset(root=root, npoints=args.npoint, split='trainval', normal_channel=args.normal)
+    #TRAIN_DATASET = PartNormalDataset( npoints=args.npoint, split='trainval', normal_channel=args.normal)
+    #merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
+    merged_json = "C:\\Users\\M0x1\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json"
+    TRAIN_DATASET = RackDataset(files=[merged_json], points_per_scan=100000)
+    point_set, cls, seg = TRAIN_DATASET[0]
+    print(point_set, cls, seg)
+    point_set, cls, seg = TRAIN_DATASET[-1]
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True)
-    TEST_DATASET = PartNormalDataset(root=root, npoints=args.npoint, split='test', normal_channel=args.normal)
+    #TEST_DATASET = PartNormalDataset( npoints=args.npoint, split='test', normal_channel=args.normal)
+    TEST_DATASET = RackDataset(files=[merged_json], points_per_scan=100000)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=10)
     log_string("The number of training data is: %d" % len(TRAIN_DATASET))
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
-    num_classes = 16
-    num_part = 50
+    num_classes = len(TRAIN_DATASET.get_classes())
+    num_part = num_classes * 3 # (0) clutter, (1) shelves, (2) poles.
+
+    original_classes_dict = TRAIN_DATASET.get_classes()
+
+    seg_classes = {}
+    counter = 0
+    for key, value in original_classes_dict.items():
+        seg_classes[key] = list(range(counter, counter + 3))
+        counter += 3
+
+    print(seg_classes)
+
+    seg_label_to_cat = {}  # {0:Airplane, 1:Airplane, ...49:Table}
+    for cat in seg_classes.keys():
+        for label in seg_classes[cat]:
+            seg_label_to_cat[label] = cat
 
     '''MODEL LOADING'''
     MODEL = importlib.import_module(args.model)
     shutil.copy('models/%s.py' % args.model, str(exp_dir))
     shutil.copy('models/pointnet2_utils.py', str(exp_dir))
 
-    classifier = MODEL.get_model(num_part, normal_channel=args.normal).cuda()
-    criterion = MODEL.get_loss().cuda()
+    classifier = MODEL.get_model(num_part, normal_channel=args.normal).to(device)
+    criterion = MODEL.get_loss().to(device)
     classifier.apply(inplace_relu)
 
     def weights_init(m):
@@ -187,10 +213,10 @@ def main(args):
             points[:, :, 0:3] = provider.random_scale_point_cloud(points[:, :, 0:3])
             points[:, :, 0:3] = provider.shift_point_cloud(points[:, :, 0:3])
             points = torch.Tensor(points)
-            points, label, target = points.float().cuda(), label.long().cuda(), target.long().cuda()
+            points, label, target = points.float().to(device), label.long().to(device), target.long().to(device)
             points = points.transpose(2, 1)
 
-            seg_pred, trans_feat = classifier(points, to_categorical(label, num_classes))
+            seg_pred, trans_feat = classifier(points, to_categorical(label, num_classes, device))
             seg_pred = seg_pred.contiguous().view(-1, num_part)
             target = target.view(-1, 1)[:, 0]
             pred_choice = seg_pred.data.max(1)[1]
@@ -221,9 +247,9 @@ def main(args):
 
             for batch_id, (points, label, target) in tqdm(enumerate(testDataLoader), total=len(testDataLoader), smoothing=0.9):
                 cur_batch_size, NUM_POINT, _ = points.size()
-                points, label, target = points.float().cuda(), label.long().cuda(), target.long().cuda()
+                points, label, target = points.float().to(device), label.long().to(device), target.long().to(device)
                 points = points.transpose(2, 1)
-                seg_pred, _ = classifier(points, to_categorical(label, num_classes))
+                seg_pred, _ = classifier(points, to_categorical(label, num_classes, device))
                 cur_pred_val = seg_pred.cpu().data.numpy()
                 cur_pred_val_logits = cur_pred_val
                 cur_pred_val = np.zeros((cur_batch_size, NUM_POINT)).astype(np.int32)
