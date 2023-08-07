@@ -17,7 +17,7 @@ from pathlib import Path
 from tqdm import tqdm
 from data_utils.ShapeNetDataLoader import PartNormalDataset
 
-sys.path.append('C:\\Users\\marco\\PycharmProjects\\PointBluePython')
+sys.path.append('/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/')
 
 from MachineLearningAutomation.Datasets import RackDataset
 
@@ -58,6 +58,33 @@ def parse_args():
 
     return parser.parse_args()
 
+def get_json_files_path(facilities_path: str):
+    facilities_list = os.listdir(facilities_path)
+
+    json_files_path = []
+    for annotated_facility in facilities_list:
+        files_names = os.listdir(facilities_path + annotated_facility)
+        for file_name in files_names:
+            if file_name.endswith('.json'):
+                json_files_path.append(facilities_path + annotated_facility + '/' + file_name)
+
+    return json_files_path
+
+
+def split_lists(input_lists, split_percentage:float = .7):
+    if split_percentage < 0 or split_percentage > 1:
+        raise ValueError("Split percentage should be between 0 and 1.")
+
+    first_list = []
+    second_list = []
+
+    for idx in range(len(input_lists)):
+        split_index = int(len(input_lists[idx]) * split_percentage)
+
+        first_list.extend(input_lists[idx][:split_index])
+        second_list.extend(input_lists[idx][split_index:])
+
+    return first_list, second_list
 
 def main(args):
     def log_string(str):
@@ -106,20 +133,38 @@ def main(args):
 
     #TRAIN_DATASET = PartNormalDataset( npoints=args.npoint, split='trainval', normal_channel=args.normal)
     #merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
-    merged_json = "C:\\Users\\M0x1\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json"
-    TRAIN_DATASET = RackDataset(files=[merged_json], points_per_scan=100000)
+    merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+
+    # facilities_path = './facilities_rootdir/'
+    facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
+    facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
+
+    facilities1 = get_json_files_path(facilities1_path)
+    facilities2 = get_json_files_path(facilities2_path)
+
+    train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
+
+    print("Train set facilities: \n", train_set_facilities)
+    print("Test set facilities: \n", test_set_facilities)
+
+
+    TRAIN_DATASET = RackDataset(files=train_set_facilities, points_per_scan=10000000, npoints=args.npoint)
     point_set, cls, seg = TRAIN_DATASET[0]
     print(point_set, cls, seg)
     point_set, cls, seg = TRAIN_DATASET[-1]
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True)
     #TEST_DATASET = PartNormalDataset( npoints=args.npoint, split='test', normal_channel=args.normal)
-    TEST_DATASET = RackDataset(files=[merged_json], points_per_scan=100000)
+    TEST_DATASET = RackDataset(files=test_set_facilities, points_per_scan=10000000, npoints=args.npoint)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=10)
     log_string("The number of training data is: %d" % len(TRAIN_DATASET))
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
-    num_classes = len(TRAIN_DATASET.get_classes())
-    num_part = num_classes * 3 # (0) clutter, (1) shelves, (2) poles.
+    # This could potentially become troublesome if num_classes don't match or exceed the actual dataset's
+    # num_classes = len(TRAIN_DATASET.get_classes())
+    # num_part = num_classes * 3 # (0) clutter, (1) shelves, (2) poles.
+
+    num_classes = 16
+    num_part = 50
 
     original_classes_dict = TRAIN_DATASET.get_classes()
 

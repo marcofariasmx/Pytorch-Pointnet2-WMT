@@ -38,10 +38,10 @@ class get_model(nn.Module):
         # Feature Propagation layers
         l2_points = self.fp3(l2_xyz, l3_xyz, l2_points, l3_points)
         l1_points = self.fp2(l1_xyz, l2_xyz, l1_points, l2_points)
-        cls_label_one_hot = cls_label.view(B,16,1).repeat(1,1,N)
+        cls_label_one_hot = cls_label.view(B,16,1).repeat(1,1,N) #This is giving trouble, the 16 most likely represent the number of classes and from there it develops the neural network
         l0_points = self.fp1(l0_xyz, l1_xyz, torch.cat([cls_label_one_hot,l0_xyz,l0_points],1), l1_points)
         # FC layers
-        feat = F.relu(self.bn1(self.conv1(l0_points)), inplace=True)
+        feat = F.relu(self.bn1(self.conv1(l0_points)))
         x = self.drop1(feat)
         x = self.conv2(x)
         x = F.log_softmax(x, dim=1)
