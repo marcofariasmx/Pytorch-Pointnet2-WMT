@@ -129,9 +129,6 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    #facilities_root = r'C:\Users\M0x1\OneDrive\MachineLearningAutomation\FacilitiesX10New'
-
-    #TRAIN_DATASET = PartNormalDataset( npoints=args.npoint, split='trainval', normal_channel=args.normal)
     #merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
     merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
 
@@ -149,13 +146,10 @@ def main(args):
 
 
     TRAIN_DATASET = RackDataset(files=train_set_facilities, points_per_scan=10000000, npoints=args.npoint)
-    point_set, cls, seg = TRAIN_DATASET[0]
-    print(point_set, cls, seg)
-    point_set, cls, seg = TRAIN_DATASET[-1]
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True)
-    #TEST_DATASET = PartNormalDataset( npoints=args.npoint, split='test', normal_channel=args.normal)
     TEST_DATASET = RackDataset(files=test_set_facilities, points_per_scan=10000000, npoints=args.npoint)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=10)
+
     log_string("The number of training data is: %d" % len(TRAIN_DATASET))
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
