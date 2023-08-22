@@ -19,7 +19,9 @@ from data_utils.ShapeNetDataLoader import PartNormalDataset
 
 sys.path.append('/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/')
 
-from MachineLearningAutomation.Datasets import RackDataset
+from MachineLearningAutomation.Datasets import RackPartSegDataset
+from WarehouseDataStructures.Facility import Facility
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -129,25 +131,28 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    #merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
-    merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+    merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
+    #merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
 
     # facilities_path = './facilities_rootdir/'
-    facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
-    facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
+    # facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
+    # facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
+    #
+    # facilities1 = get_json_files_path(facilities1_path)
+    # facilities2 = get_json_files_path(facilities2_path)
+    #
+    # train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
 
-    facilities1 = get_json_files_path(facilities1_path)
-    facilities2 = get_json_files_path(facilities2_path)
+    # print("Train set facilities: \n", train_set_facilities)
+    # print("Test set facilities: \n", test_set_facilities)
 
-    train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
+    train_facilities = [Facility(files=[merged_json], points_per_scan=1000000)]
+    TRAIN_DATASET = RackPartSegDataset(facilities=train_facilities, points_per_chunk=args.npoint, include_bulk=False)
 
-    print("Train set facilities: \n", train_set_facilities)
-    print("Test set facilities: \n", test_set_facilities)
+    test_facilities = [Facility(files=[merged_json], points_per_scan=1000000)]
+    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
 
-
-    TRAIN_DATASET = RackDataset(files=train_set_facilities, points_per_scan=10000000, npoints=args.npoint)
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True)
-    TEST_DATASET = RackDataset(files=test_set_facilities, points_per_scan=10000000, npoints=args.npoint)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=10)
 
     log_string("The number of training data is: %d" % len(TRAIN_DATASET))
