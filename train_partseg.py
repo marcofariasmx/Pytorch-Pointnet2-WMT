@@ -132,25 +132,34 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
+    #merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
     #merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
 
-    # facilities_path = './facilities_rootdir/'
-    # facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
-    # facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
-    #
-    # facilities1 = get_json_files_path(facilities1_path)
-    # facilities2 = get_json_files_path(facilities2_path)
-    #
-    # train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
+    facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
+    facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
 
-    # print("Train set facilities: \n", train_set_facilities)
-    # print("Test set facilities: \n", test_set_facilities)
+    facilities1 = get_json_files_path(facilities1_path)
+    facilities2 = get_json_files_path(facilities2_path)
 
-    train_facilities = [Facility(files=[merged_json], points_per_scan=1000000)]
+    train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
+
+    print("Train set facilities: \n", train_set_facilities)
+    print("Test set facilities: \n", test_set_facilities)
+
+    #train_total_facilities = len(train_set_facilities)
+    train_facilities = []
+    test_facilities = []
+
+    for file in tqdm(train_set_facilities, desc="Loading Train Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=10000000)
+        train_facilities.append(facility)
+
+    for file in tqdm(test_set_facilities, desc="Loading Test Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=10000000)
+        test_facilities.append(facility)
+
     TRAIN_DATASET = RackPartSegDataset(facilities=train_facilities, points_per_chunk=args.npoint, include_bulk=False)
 
-    test_facilities = [Facility(files=[merged_json], points_per_scan=1000000)]
     TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
 
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
