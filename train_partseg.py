@@ -152,26 +152,29 @@ def main(args):
     test_facilities = [Facility(files=[merged_json], points_per_scan=1000000)]
     TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
 
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=10)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     log_string("The number of training data is: %d" % len(TRAIN_DATASET))
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
-    # This could potentially become troublesome if num_classes don't match or exceed the actual dataset's
-    # num_classes = len(TRAIN_DATASET.get_classes())
-    # num_part = num_classes * 3 # (0) clutter, (1) shelves, (2) poles.
+    original_classes_dict = TRAIN_DATASET.get_classes()
+    num_different_parts = len(TRAIN_DATASET.get_parts_dict())
 
+    """
+    These numbers represent the original neural network design capabilities. It is able to handle 16 different
+    classes with a total of 50 different parts across the classes. If they are to be modified, the NN structure
+    has to change as well. For the moment being the train_partseg script allows to work with less classes and
+    part numbers.
+    """
     num_classes = 16
     num_part = 50
-
-    original_classes_dict = TRAIN_DATASET.get_classes()
 
     seg_classes = {}
     counter = 0
     for key, value in original_classes_dict.items():
-        seg_classes[key] = list(range(counter, counter + 3))
-        counter += 3
+        seg_classes[key] = list(range(counter, counter + num_different_parts))
+        counter += num_different_parts
 
     print(seg_classes)
 
