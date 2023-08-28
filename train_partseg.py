@@ -54,6 +54,7 @@ def parse_args():
     parser.add_argument('--npoint', type=int, default=2048, help='point Number')
     parser.add_argument('--normal', action='store_true', default=True, help='use normals')
     parser.add_argument('--step_size', type=int, default=20, help='decay step for lr decay')
+    parser.add_argument('--num_workers', type=int, default=0, help='number of cpu threads to process data')
     parser.add_argument('--lr_decay', type=float, default=0.5, help='decay rate for lr decay')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
@@ -152,8 +153,8 @@ def main(args):
     test_facilities = [Facility(files=[merged_json], points_per_scan=1000000)]
     TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
 
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=0, drop_last=True)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=0)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
     log_string("The number of training data is: %d" % len(TRAIN_DATASET))
     log_string("The number of test data is: %d" % len(TEST_DATASET))
