@@ -152,12 +152,6 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    #merged_json = 'C:\\Users\\marco\\PycharmProjects\\PointBluePython\\Test Facilities\\Test Facility - Annotated\\Data Files (Expert only)\\JSON Files\\stilwell_3.1cm_normals_no_perimeter.json'
-    #merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
-
-    # facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
-    # facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
-    #
     # facilities1 = get_json_files_path(facilities1_path)
     # facilities2 = get_json_files_path(facilities2_path)
     #
