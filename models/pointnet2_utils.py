@@ -4,6 +4,16 @@ import torch.nn.functional as F
 from time import time
 import numpy as np
 
+def print_nan(x, name):
+    if torch.isnan(x).any():
+        print(f"NaN detected in {name}")
+
+# Add this function to check the initialization of BatchNorm layers
+def check_bn_init(model):
+    for m in model.modules():
+        if isinstance(m, nn.BatchNorm2d):
+            print(f"BatchNorm Layer: {m}, Mean: {m.running_mean}, Var: {m.running_var}")
+
 def timeit(tag, t):
     print("{}: {}s".format(tag, time() - t))
     return time()
@@ -216,7 +226,7 @@ class PointNetSetAbstractionMsg(nn.Module):
             last_channel = in_channel + 3
             for out_channel in mlp_list[i]:
                 convs.append(nn.Conv2d(last_channel, out_channel, 1))
-                bns.append(nn.BatchNorm2d(out_channel))
+                bns.append(nn.BatchNorm2d(out_channel, eps=1e-3))
                 last_channel = out_channel
             self.conv_blocks.append(convs)
             self.bn_blocks.append(bns)
@@ -230,6 +240,9 @@ class PointNetSetAbstractionMsg(nn.Module):
             new_xyz: sampled points position data, [B, C, S]
             new_points_concat: sample points feature data, [B, D', S]
         """
+        print_nan(xyz, "Initial xyz")
+        print_nan(points, "Initial points")
+
         xyz = xyz.permute(0, 2, 1)
         if points is not None:
             points = points.permute(0, 2, 1)
@@ -250,10 +263,77 @@ class PointNetSetAbstractionMsg(nn.Module):
                 grouped_points = grouped_xyz
 
             grouped_points = grouped_points.permute(0, 3, 2, 1)  # [B, D, K, S]
+            print_nan(grouped_points, f"grouped_points before conv_blocks[{i}]")
+
             for j in range(len(self.conv_blocks[i])):
+                print(torch.isnan(grouped_points).any())
+                print((grouped_points == float('inf')).any())
+
+                # Check for NaN values
+                nan_count = torch.isnan(grouped_points).sum()
+                print(f"Number of NaNs: {nan_count.item()}")
+
+                # Check for Infinity values
+                inf_count = torch.isinf(grouped_points).sum()
+                print(f"Number of Infs: {inf_count.item()}")
+
+                # Check for zero values
+                zero_count = (grouped_points == 0).sum()
+                print(f"Number of Zeros: {zero_count.item()}")
+
+                # Get minimum value
+                min_val = torch.min(grouped_points)
+                print(f"Minimum value: {min_val.item()}")
+
+                # Get maximum value
+                max_val = torch.max(grouped_points)
+                print(f"Maximum value: {max_val.item()}")
+
+                # Get mean value
+                mean_val = torch.mean(grouped_points)
+                print(f"Mean value: {mean_val.item()}")
+
                 conv = self.conv_blocks[i][j]
                 bn = self.bn_blocks[i][j]
-                grouped_points =  F.relu(bn(conv(grouped_points)))
+
+                # Check for NaN, Inf, extreme values in grouped_points
+                assert not torch.isnan(grouped_points).any(), "NaNs in grouped_points before convolution"
+                assert not torch.isinf(grouped_points).any(), "Infs in grouped_points before convolution"
+                print("Min, Max, Mean of grouped_points before convolution:",
+                      torch.min(grouped_points).item(), torch.max(grouped_points).item(),
+                      torch.mean(grouped_points).item())
+
+                # Check for NaN, Inf, extreme values in convolution weights
+                assert not torch.isnan(conv.weight).any(), "NaNs in conv weights"
+                assert not torch.isinf(conv.weight).any(), "Infs in conv weights"
+                print("Min, Max, Mean of conv weights:",
+                      torch.min(conv.weight).item(), torch.max(conv.weight).item(), torch.mean(conv.weight).item())
+
+                # If your conv layer has biases
+                if conv.bias is not None:
+                    assert not torch.isnan(conv.bias).any(), "NaNs in conv bias"
+                    assert not torch.isinf(conv.bias).any(), "Infs in conv bias"
+                    print("Min, Max, Mean of conv bias:",
+                          torch.min(conv.bias).item(), torch.max(conv.bias).item(), torch.mean(conv.bias).item())
+
+                # Verify that the data types of grouped_points and conv weights are the same
+                assert grouped_points.dtype == conv.weight.dtype, f"Mismatched data types: {grouped_points.dtype} and {conv.weight.dtype}"
+
+                grouped_points = conv(grouped_points)
+
+
+
+                print(f"BatchNorm running mean: {bn.running_mean}, running var: {bn.running_var}")
+                grouped_points = bn(grouped_points)
+                print_nan(grouped_points, f"grouped_points after bn in conv_blocks[{i}][{j}]")
+                grouped_points = F.relu(grouped_points)
+                print_nan(grouped_points, f"grouped_points after ReLU in conv_blocks[{i}][{j}]")
+
+                print(f"Conv Weights: {conv.weight.data}, Conv Biases: {conv.bias.data}")
+                print(f"BatchNorm Weights: {bn.weight.data}, BatchNorm Biases: {bn.bias.data}")
+
+                print(f"grouped_points Min: {torch.min(grouped_points)}, Max: {torch.max(grouped_points)}")
+
             new_points = torch.max(grouped_points, 2)[0]  # [B, D', S]
             new_points_list.append(new_points)
 
