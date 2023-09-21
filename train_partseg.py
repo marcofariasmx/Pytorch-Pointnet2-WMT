@@ -16,19 +16,36 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 from data_utils.ShapeNetDataLoader import PartNormalDataset
+# Get the system's platform
+import platform
+
+system_platform = platform.system()
+
+# Check if it's Windows or Linux
+if system_platform == "Windows":
+    print("The operating system is Windows.")
+    sys.path.append('C:/Users/M0x1/PycharmProjects/PointBluePython')
+    facilities1_path = 'C:\\Users\\M0x1/OneDrive\\MachineLearningAutomation\\FacilitiesX10New\\'
+    facilities2_path = 'C:\\Users\\M0x1/Downloads\\Facilities_NET_x31\\'
+    merged_json = "C:/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+
+elif system_platform == "Linux":
+    print("The operating system is Linux.")
+    sys.path.append('/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/')
+    facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
+    facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
+    merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+
+else:
+    print("The operating system is neither Windows nor Linux.")
+
+from MachineLearningAutomation.Datasets import RackPartSegDataset
+from WarehouseDataStructures.Facility import Facility
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
-
-seg_classes = {'Earphone': [16, 17, 18], 'Motorbike': [30, 31, 32, 33, 34, 35], 'Rocket': [41, 42, 43],
-               'Car': [8, 9, 10, 11], 'Laptop': [28, 29], 'Cap': [6, 7], 'Skateboard': [44, 45, 46], 'Mug': [36, 37],
-               'Guitar': [19, 20, 21], 'Bag': [4, 5], 'Lamp': [24, 25, 26, 27], 'Table': [47, 48, 49],
-               'Airplane': [0, 1, 2, 3], 'Pistol': [38, 39, 40], 'Chair': [12, 13, 14, 15], 'Knife': [22, 23]}
-seg_label_to_cat = {}  # {0:Airplane, 1:Airplane, ...49:Table}
-for cat in seg_classes.keys():
-    for label in seg_classes[cat]:
-        seg_label_to_cat[label] = cat
 
 
 def inplace_relu(m):
@@ -36,18 +53,18 @@ def inplace_relu(m):
     if classname.find('ReLU') != -1:
         m.inplace=True
 
-def to_categorical(y, num_classes):
+def to_categorical(y, num_classes, device):
     """ 1-hot encodes a tensor """
     new_y = torch.eye(num_classes)[y.cpu().data.numpy(),]
     if (y.is_cuda):
-        return new_y.cuda()
+        return new_y.to(device)
     return new_y
 
 
 def parse_args():
     parser = argparse.ArgumentParser('Model')
     parser.add_argument('--model', type=str, default='pointnet_part_seg', help='model name')
-    parser.add_argument('--batch_size', type=int, default=16, help='batch Size during training')
+    parser.add_argument('--batch_size', type=int, default=14, help='batch Size during training')
     parser.add_argument('--epoch', default=251, type=int, help='epoch to run')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='initial learning rate')
     parser.add_argument('--gpu', type=str, default='0', help='specify GPU devices')
@@ -57,10 +74,40 @@ def parse_args():
     parser.add_argument('--npoint', type=int, default=2048, help='point Number')
     parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--step_size', type=int, default=20, help='decay step for lr decay')
+    parser.add_argument('--num_workers', type=int, default=0, help='number of cpu threads to process data')
     parser.add_argument('--lr_decay', type=float, default=0.5, help='decay rate for lr decay')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
+                        help='Device to use (cuda or cpu)')
 
     return parser.parse_args()
 
+def get_json_files_path(facilities_path: str):
+    facilities_list = os.listdir(facilities_path)
+
+    json_files_path = []
+    for annotated_facility in facilities_list:
+        files_names = os.listdir(facilities_path + annotated_facility)
+        for file_name in files_names:
+            if file_name.endswith('.json'):
+                json_files_path.append(facilities_path + annotated_facility + '/' + file_name)
+
+    return json_files_path
+
+
+def split_lists(input_lists, split_percentage:float = .7):
+    if split_percentage < 0 or split_percentage > 1:
+        raise ValueError("Split percentage should be between 0 and 1.")
+
+    first_list = []
+    second_list = []
+
+    for idx in range(len(input_lists)):
+        split_index = int(len(input_lists[idx]) * split_percentage)
+
+        first_list.extend(input_lists[idx][:split_index])
+        second_list.extend(input_lists[idx][split_index:])
+
+    return first_list, second_list
 
 def main(args):
     def log_string(str):
@@ -68,7 +115,14 @@ def main(args):
         print(str)
 
     '''HYPER PARAMETER'''
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        raise ValueError("CUDA is not available. Please use --device cpu or make sure CUDA is installed and compatible.")
+
+    if args.device == 'cuda':
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
 
     '''CREATE DIR'''
     timestr = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))
@@ -98,25 +152,73 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    root = 'data/shapenetcore_partanno_segmentation_benchmark_v0_normal/'
+    # facilities1 = get_json_files_path(facilities1_path)
+    # facilities2 = get_json_files_path(facilities2_path)
+    #
+    # train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
+    #
+    # print("Train set facilities: \n", train_set_facilities)
+    # print("Test set facilities: \n", test_set_facilities)
 
-    TRAIN_DATASET = PartNormalDataset(root=root, npoints=args.npoint, split='trainval', normal_channel=args.normal)
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=10, drop_last=True)
-    TEST_DATASET = PartNormalDataset(root=root, npoints=args.npoint, split='test', normal_channel=args.normal)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=10)
+    #train_total_facilities = len(train_set_facilities)
+    train_facilities = []
+    test_facilities = []
+
+    for file in tqdm([merged_json], desc="Loading Train Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=10000000)
+        train_facilities.append(facility)
+
+    for file in tqdm([merged_json], desc="Loading Test Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=10000000)
+        test_facilities.append(facility)
+
+    TRAIN_DATASET = RackPartSegDataset(facilities=train_facilities, points_per_chunk=args.npoint, include_bulk=False)
+
+    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
+
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+
     log_string("The number of training data is: %d" % len(TRAIN_DATASET))
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
-    num_classes = 16
-    num_part = 50
+    original_classes_dict = TRAIN_DATASET.get_classes()
+    num_different_parts = len(TRAIN_DATASET.get_parts_dict())
+
+    """
+    These numbers represent the original neural network design capabilities. It is able to handle 16 different
+    classes with a total of 50 different parts across the classes. If they are to be modified, the NN structure
+    has to change as well. For the moment being the train_partseg script allows to work with less classes and
+    part numbers.
+    """
+    custom_data = True
+    if custom_data:
+        num_classes = len(original_classes_dict)
+        num_part = num_different_parts * num_classes
+    else:
+        num_classes = 16
+        num_part = 50
+
+    seg_classes = {}
+    counter = 0
+    for key, value in original_classes_dict.items():
+        seg_classes[key] = list(range(counter, counter + num_different_parts))
+        counter += num_different_parts
+
+    print(seg_classes)
+
+    seg_label_to_cat = {}  # {0:Airplane, 1:Airplane, ...49:Table}
+    for cat in seg_classes.keys():
+        for label in seg_classes[cat]:
+            seg_label_to_cat[label] = cat
 
     '''MODEL LOADING'''
     MODEL = importlib.import_module(args.model)
     shutil.copy('models/%s.py' % args.model, str(exp_dir))
     shutil.copy('models/pointnet2_utils.py', str(exp_dir))
 
-    classifier = MODEL.get_model(num_part, normal_channel=args.normal).cuda()
-    criterion = MODEL.get_loss().cuda()
+    classifier = MODEL.get_model(num_classes=num_classes, num_parts=num_part, custom_data=custom_data, normal_channel=args.normal).to(device)
+    criterion = MODEL.get_loss().to(device)
     classifier.apply(inplace_relu)
 
     def weights_init(m):
@@ -183,14 +285,17 @@ def main(args):
         for i, (points, label, target) in tqdm(enumerate(trainDataLoader), total=len(trainDataLoader), smoothing=0.9):
             optimizer.zero_grad()
 
+
             points = points.data.numpy()
+            if not args.normal: #if normals are not taken into account, only process the first 3 numbers (x,y,z).
+                points = points[:, :, :3]
             points[:, :, 0:3] = provider.random_scale_point_cloud(points[:, :, 0:3])
             points[:, :, 0:3] = provider.shift_point_cloud(points[:, :, 0:3])
             points = torch.Tensor(points)
-            points, label, target = points.float().cuda(), label.long().cuda(), target.long().cuda()
+            points, label, target = points.float().to(device), label.long().to(device), target.long().to(device)
             points = points.transpose(2, 1)
 
-            seg_pred, trans_feat = classifier(points, to_categorical(label, num_classes))
+            seg_pred, trans_feat = classifier(points, to_categorical(label, num_classes, device))
             seg_pred = seg_pred.contiguous().view(-1, num_part)
             target = target.view(-1, 1)[:, 0]
             pred_choice = seg_pred.data.max(1)[1]
@@ -199,6 +304,7 @@ def main(args):
             mean_correct.append(correct.item() / (args.batch_size * args.npoint))
             loss = criterion(seg_pred, target, trans_feat)
             loss.backward()
+            torch.nn.utils.clip_grad_value_(classifier.parameters(), clip_value=1.0)
             optimizer.step()
 
         train_instance_acc = np.mean(mean_correct)
@@ -221,9 +327,11 @@ def main(args):
 
             for batch_id, (points, label, target) in tqdm(enumerate(testDataLoader), total=len(testDataLoader), smoothing=0.9):
                 cur_batch_size, NUM_POINT, _ = points.size()
-                points, label, target = points.float().cuda(), label.long().cuda(), target.long().cuda()
+                points, label, target = points.float().to(device), label.long().to(device), target.long().to(device)
+                if not args.normal:  # if normals are not taken into account, only process the first 3 numbers (x,y,z).
+                    points = points[:, :, :3]
                 points = points.transpose(2, 1)
-                seg_pred, _ = classifier(points, to_categorical(label, num_classes))
+                seg_pred, _ = classifier(points, to_categorical(label, num_classes, device))
                 cur_pred_val = seg_pred.cpu().data.numpy()
                 cur_pred_val_logits = cur_pred_val
                 cur_pred_val = np.zeros((cur_batch_size, NUM_POINT)).astype(np.int32)
@@ -264,7 +372,7 @@ def main(args):
             mean_shape_ious = np.mean(list(shape_ious.values()))
             test_metrics['accuracy'] = total_correct / float(total_seen)
             test_metrics['class_avg_accuracy'] = np.mean(
-                np.array(total_correct_class) / np.array(total_seen_class, dtype=np.float))
+                np.array(total_correct_class) / np.array(total_seen_class, dtype=float))
             for cat in sorted(shape_ious.keys()):
                 log_string('eval mIoU of %s %f' % (cat + ' ' * (14 - len(cat)), shape_ious[cat]))
             test_metrics['class_avg_iou'] = mean_shape_ious

@@ -12,19 +12,13 @@ import importlib
 from tqdm import tqdm
 import numpy as np
 
+sys.path.append('/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/')
+from MachineLearningAutomation.Datasets import RackPartSegDataset
+from WarehouseDataStructures.Facility import Facility
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'models'))
-
-seg_classes = {'Earphone': [16, 17, 18], 'Motorbike': [30, 31, 32, 33, 34, 35], 'Rocket': [41, 42, 43],
-               'Car': [8, 9, 10, 11], 'Laptop': [28, 29], 'Cap': [6, 7], 'Skateboard': [44, 45, 46], 'Mug': [36, 37],
-               'Guitar': [19, 20, 21], 'Bag': [4, 5], 'Lamp': [24, 25, 26, 27], 'Table': [47, 48, 49],
-               'Airplane': [0, 1, 2, 3], 'Pistol': [38, 39, 40], 'Chair': [12, 13, 14, 15], 'Knife': [22, 23]}
-
-seg_label_to_cat = {}  # {0:Airplane, 1:Airplane, ...49:Table}
-for cat in seg_classes.keys():
-    for label in seg_classes[cat]:
-        seg_label_to_cat[label] = cat
 
 
 def to_categorical(y, num_classes):
@@ -41,9 +35,10 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=24, help='batch size in testing')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
     parser.add_argument('--num_point', type=int, default=2048, help='point Number')
-    parser.add_argument('--log_dir', type=str, required=True, help='experiment root')
+    parser.add_argument('--log_dir', type=str, default='pointnet2_part_seg_msg', help='experiment root')
     parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--num_votes', type=int, default=3, help='aggregate segmentation scores with voting')
+    parser.add_argument('--num_workers', type=int, default=0, help='number of cpu threads to process data')
     return parser.parse_args()
 
 
@@ -69,10 +64,47 @@ def main(args):
     log_string(args)
 
     root = 'data/shapenetcore_partanno_segmentation_benchmark_v0_normal/'
+    merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
 
-    TEST_DATASET = PartNormalDataset(root=root, npoints=args.num_point, split='test', normal_channel=args.normal)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=4)
+
+    #TEST_DATASET = PartNormalDataset(root=root, npoints=args.num_point, split='test', normal_channel=args.normal)
+    #TEST_DATASET = RackPartSegDataset(files=merged_json, points_per_scan=10000000, npoints=2500)
+
+    test_facilities = []
+    for file in tqdm([merged_json], desc="Loading Facilities to predict", unit="facility"):
+        facility = Facility(files=file, points_per_scan=10000000)
+        test_facilities.append(facility)
+
+    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=1000000, include_bulk=False)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
+                                                 num_workers=args.num_workers)
+
+    #testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=4)
     log_string("The number of test data is: %d" % len(TEST_DATASET))
+
+    original_classes_dict = TEST_DATASET.get_classes()
+
+    # seg_classes = {'Earphone': [16, 17, 18], 'Motorbike': [30, 31, 32, 33, 34, 35], 'Rocket': [41, 42, 43],
+    #                'Car': [8, 9, 10, 11], 'Laptop': [28, 29], 'Cap': [6, 7], 'Skateboard': [44, 45, 46],
+    #                'Mug': [36, 37],
+    #                'Guitar': [19, 20, 21], 'Bag': [4, 5], 'Lamp': [24, 25, 26, 27], 'Table': [47, 48, 49],
+    #                'Airplane': [0, 1, 2, 3], 'Pistol': [38, 39, 40], 'Chair': [12, 13, 14, 15], 'Knife': [22, 23]}
+
+    seg_classes = {}
+    counter = 0
+    for key, value in original_classes_dict.items():
+        seg_classes[key] = list(range(counter, counter + 3))
+        counter += 3
+
+    print(seg_classes)
+
+    seg_label_to_cat = {}  # {0:Airplane, 1:Airplane, ...49:Table}
+    for cat in seg_classes.keys():
+        for label in seg_classes[cat]:
+            seg_label_to_cat[label] = cat
+
+    print(seg_label_to_cat)
+
     num_classes = 16
     num_part = 50
 

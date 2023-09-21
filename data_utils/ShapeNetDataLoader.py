@@ -14,7 +14,7 @@ def pc_normalize(pc):
     return pc
 
 class PartNormalDataset(Dataset):
-    def __init__(self,root = './data/shapenetcore_partanno_segmentation_benchmark_v0_normal', npoints=2500, split='train', class_choice=None, normal_channel=False):
+    def __init__(self, root='./data/shapenetcore_partanno_segmentation_benchmark_v0_normal', npoints=2500, split='train', class_choice=None, normal_channel=False):
         self.npoints = npoints
         self.root = root
         self.catfile = os.path.join(self.root, 'synsetoffset2category.txt')
@@ -26,11 +26,11 @@ class PartNormalDataset(Dataset):
             for line in f:
                 ls = line.strip().split()
                 self.cat[ls[0]] = ls[1]
-        self.cat = {k: v for k, v in self.cat.items()}
+        self.cat = {key: val for key, val in self.cat.items()}
         self.classes_original = dict(zip(self.cat, range(len(self.cat))))
 
-        if not class_choice is  None:
-            self.cat = {k:v for k,v in self.cat.items() if k in class_choice}
+        if not class_choice is None:
+            self.cat = {key:val for key,val in self.cat.items() if key in class_choice}
         # print(self.cat)
 
         self.meta = {}
