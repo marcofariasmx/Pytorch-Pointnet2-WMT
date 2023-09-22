@@ -226,7 +226,7 @@ class PointNetSetAbstractionMsg(nn.Module):
             last_channel = in_channel + 3
             for out_channel in mlp_list[i]:
                 convs.append(nn.Conv2d(last_channel, out_channel, 1))
-                bns.append(nn.BatchNorm2d(out_channel, eps=1e-3))
+                bns.append(nn.BatchNorm2d(out_channel, eps=1e-5))
                 last_channel = out_channel
             self.conv_blocks.append(convs)
             self.bn_blocks.append(bns)
