@@ -27,14 +27,14 @@ if system_platform == "Windows":
     sys.path.append('C:/Users/M0x1/PycharmProjects/PointBluePython')
     facilities1_path = 'C:\\Users\\M0x1/OneDrive\\MachineLearningAutomation\\FacilitiesX10New\\'
     facilities2_path = 'C:\\Users\\M0x1/Downloads\\Facilities_NET_x31\\'
-    merged_json = "C:/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+    test_facility = "C:/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
 
 elif system_platform == "Linux":
     print("The operating system is Linux.")
     sys.path.append('/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/')
     facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
     facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
-    merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+    test_facility = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
 
 else:
     print("The operating system is neither Windows nor Linux.")
@@ -78,6 +78,8 @@ def parse_args():
     parser.add_argument('--lr_decay', type=float, default=0.5, help='decay rate for lr decay')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
+    parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
+                        help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
 
     return parser.parse_args()
 
@@ -152,23 +154,27 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    # facilities1 = get_json_files_path(facilities1_path)
-    # facilities2 = get_json_files_path(facilities2_path)
-    #
-    # train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
-    #
-    # print("Train set facilities: \n", train_set_facilities)
-    # print("Test set facilities: \n", test_set_facilities)
+    if args.facilities_dirs:
+        facilities_jsons = []
+        for facility_dir_path in args.facilities_dirs:
+            facilities_jsons.append(get_json_files_path(facility_dir_path))
+
+        train_set_facilities, test_set_facilities = split_lists(facilities_jsons, .7)
+
+        print("Train set facilities: \n", train_set_facilities)
+        print("Test set facilities: \n", test_set_facilities)
+    else:
+        print("No facilities directories given, starting training on test data")
 
     #train_total_facilities = len(train_set_facilities)
     train_facilities = []
     test_facilities = []
 
-    for file in tqdm([merged_json], desc="Loading Train Facilities", unit="facility"):
+    for file in tqdm([test_facility], desc="Loading Train Facilities", unit="facility"):
         facility = Facility(files=file, points_per_scan=10000000)
         train_facilities.append(facility)
 
-    for file in tqdm([merged_json], desc="Loading Test Facilities", unit="facility"):
+    for file in tqdm([test_facility], desc="Loading Test Facilities", unit="facility"):
         facility = Facility(files=file, points_per_scan=10000000)
         test_facilities.append(facility)
 

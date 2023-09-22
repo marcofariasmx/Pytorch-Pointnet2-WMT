@@ -35,7 +35,7 @@ explore_files(parent_folder)
 
 def main():
     # Create anno_paths.txt
-    classes_dict, annotations_paths = explore_files('./data/s3dis/Stanford3dDataset_v1.2_Aligned_Version')
+    classes_dict, annotations_paths = explore_files('./data/s3dis/Dataset')
     print(classes_dict.keys())
 
     annotations_paths = sorted(annotations_paths)
@@ -50,8 +50,6 @@ def main():
             file.write(item + '\n')
             print(item)
 
-
-    # Create class_names.txt
 
 if __name__ == '__main__':
     main()
