@@ -182,20 +182,31 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
+    # Grab path to merged JSON file for each facility
+    facilities_jsons = []
+
     if args.facilities_dirs:
-        facilities_jsons = []
-        for facility_dir_path in args.facilities_dirs:
-            facilities_jsons.append(get_json_files_path(facility_dir_path))
+        for facility_dir in args.facilities_dirs:
+            merged_json = Facility.find_merged_json_file(facility_dir)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
 
         train_set_facilities, test_set_facilities = split_lists(facilities_jsons, split_percentage=.7)
 
     else:
         print("No facilities directories given, starting training on test data")
-
-        labelpc_test_facility = os.path.join(labelpc_path, 'Test Facilities', 'Test Facility - Annotated',
-                                             'Data Files (Expert only)', 'JSON Files',
-                                             'stilwell_3.1cm_normals_no_perimeter.json')
-        train_set_facilities, test_set_facilities = split_lists([labelpc_test_facility], split_percentage=-1)
+        facility_dir = os.path.join(
+            labelpc_path,
+            'Test Facilities',
+            'Test Facility - Annotated',
+        )
+        merged_json = Facility.find_merged_json_file(facility_dir)
+        if merged_json:
+            facilities_jsons.append(merged_json)
+        else:
+            print(f'Could not find merged json file in {facility_dir}')
 
         """
         # Custom testing data:
@@ -205,6 +216,14 @@ def main(args):
         facilities2_path = os.path.join(*facilities2_path)
         train_set_facilities, test_set_facilities = split_lists([facilities1_path, facilities2_path], .7)
         """
+
+    # Check for JSONs
+    if len(facilities_jsons) == 0:
+        print('Could not find any merged JSON files')
+        exit(3)
+
+    # Split the facilities into training and testing data
+    train_set_facilities, test_set_facilities = split_lists([facilities_jsons], split_percentage=0.7)
 
     print("Train set facilities: \n", train_set_facilities)
     print("Test set facilities: \n", test_set_facilities)
