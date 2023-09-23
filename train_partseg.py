@@ -102,6 +102,7 @@ def parse_args():
                         help='Fraction of facilities to use for training vs. testing')
     parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
                         help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
+    parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
 
     return parser.parse_args()
 
@@ -192,7 +193,14 @@ def main(args):
             else:
                 print(f'Could not find merged json file in {facility_dir}')
 
-        train_set_facilities, test_set_facilities = split_lists(facilities_jsons, split_percentage=.7)
+    elif args.data_dir:
+        for facility_dir in os.listdir(args.data_dir):
+            full_facility_path = os.path.join(args.data_dir, facility_dir)
+            merged_json = Facility.find_merged_json_file(full_facility_path)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
 
     else:
         print("No facilities directories given, starting training on test data")
