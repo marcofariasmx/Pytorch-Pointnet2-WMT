@@ -48,7 +48,8 @@ labelpc_path = os.path.abspath('../PointBluePython')
 if os.path.exists(labelpc_path):
     print(f"{labelpc_path} exists!")
 else:
-    print(f"Warning: {labelpc_path} does not exist!")
+    print(f"Error: {labelpc_path} does not exist!")
+    exit(1)
 
 
 sys.path.append(labelpc_path)
@@ -56,9 +57,10 @@ sys.path.append(labelpc_path)
 try:
     from MachineLearningAutomation.Datasets import RackPartSegDataset
     from WarehouseDataStructures.Facility import Facility
-    print("LabelPc Imports successful!")
+    print("LabelPC Imports successful!")
 except ImportError as e:
     print(f"Error during import: {e}")
+    exit(2)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
