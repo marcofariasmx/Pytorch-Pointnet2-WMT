@@ -98,6 +98,8 @@ def parse_args():
     parser.add_argument('--lr_decay', type=float, default=0.5, help='decay rate for lr decay')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
+    parser.add_argument('--train_test_split', type=float, default=0.7,
+                        help='Fraction of facilities to use for training vs. testing')
     parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
                         help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
 
@@ -116,28 +118,25 @@ def get_json_files_path(facilities_path: str):
     return json_files_path
 
 
-def split_lists(input_lists, split_percentage: float = .7):
+def split_list(input_list, split_percentage: float = .7):
     """
     Method to create training and testing datasets lists based on lists of facilities provided
 
     If a -1 is given as input for split_percentage, then it proceeds to return the input list repeated.
     """
-    if split_percentage == -1:
-        return input_lists, input_lists
+    if split_percentage == -1 or len(input_list) == 1:
+        return input_list, input_list
 
     if split_percentage < 0 or split_percentage > 1:
         raise ValueError("Split percentage should be between 0 and 1.")
 
-    first_list = []
-    second_list = []
+    split_index = int(len(input_list) * split_percentage)
 
-    for idx in range(len(input_lists)):
-        split_index = int(len(input_lists[idx]) * split_percentage)
+    # Must have at least 1 item in each list
+    if split_index == len(input_list):
+        split_index = split_index - 1
 
-        first_list.extend(input_lists[idx][:split_index])
-        second_list.extend(input_lists[idx][split_index:])
-
-    return first_list, second_list
+    return input_list[:split_index], input_list[split_index:]
 
 def main(args):
     def log_string(str):
@@ -223,7 +222,7 @@ def main(args):
         exit(3)
 
     # Split the facilities into training and testing data
-    train_set_facilities, test_set_facilities = split_lists([facilities_jsons], split_percentage=0.7)
+    train_set_facilities, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
 
     print("Train set facilities: \n", train_set_facilities)
     print("Test set facilities: \n", test_set_facilities)
