@@ -43,8 +43,7 @@ LabelPC Path:
 
 Please make sure you modify this following line and change it to your current PointBluePython directory in your system
 """
-labelpc_path = sys_path + ['Users', 'M0x1', 'PycharmProjects', 'PointBluePython']
-labelpc_path = os.path.join(*labelpc_path)
+labelpc_path = os.path.abspath('../PointBluePython')
 
 if os.path.exists(labelpc_path):
     print(f"{labelpc_path} exists!")
