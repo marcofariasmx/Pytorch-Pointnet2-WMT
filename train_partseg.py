@@ -107,10 +107,10 @@ def get_json_files_path(facilities_path: str):
 
     json_files_path = []
     for annotated_facility in facilities_list:
-        files_names = os.listdir(facilities_path + annotated_facility)
+        files_names = os.listdir(os.path.join(facilities_path, annotated_facility))
         for file_name in files_names:
             if file_name.endswith('.json'):
-                json_files_path.append(facilities_path + annotated_facility + '/' + file_name)
+                json_files_path.append(os.path.join(facilities_path, annotated_facility, file_name))
 
     return json_files_path
 
@@ -196,14 +196,16 @@ def main(args):
                                              'stilwell_3.1cm_normals_no_perimeter.json')
         train_set_facilities, test_set_facilities = split_lists([labelpc_test_facility], split_percentage=-1)
 
-        """
-        # Custom testing data:
-        facilities1_path = sys_path + ['Users', 'M0x1', 'OneDrive', 'MachineLearningAutomation', 'FacilitiesX10New']
-        facilities1_path = os.path.join(*facilities1_path)
-        facilities2_path = ['Users', 'M0x1', 'Downloads', 'Facilities_NET_x31']
-        facilities2_path = os.path.join(*facilities2_path)
-        train_set_facilities, test_set_facilities = split_lists([facilities1_path, facilities2_path], .7)
-        """
+
+        # # Custom testing data:
+        # facilities1_path = sys_path + ['Users', 'M0x1', 'OneDrive', 'MachineLearningAutomation', 'FacilitiesX10New']
+        # facilities1_path = os.path.join(*facilities1_path)
+        # facilities1_list = get_json_files_path(facilities1_path)
+        # facilities2_path = ['Users', 'M0x1', 'Downloads', 'Facilities_NET_x31']
+        # facilities2_path = os.path.join(*facilities2_path)
+        # facilities2_list = get_json_files_path(facilities2_path)
+        # train_set_facilities, test_set_facilities = split_lists([facilities1_list, facilities2_list], .7)
+
 
     print("Train set facilities: \n", train_set_facilities)
     print("Test set facilities: \n", test_set_facilities)
