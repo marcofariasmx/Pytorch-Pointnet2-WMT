@@ -33,8 +33,8 @@ Disabled at the moment.
 ```
 ## Check for different model in ./models 
 ## e.g., pointnet2_msg
-python train_partseg.py --model pointnet2_part_seg_msg --normal --log_dir pointnet2_part_seg_msg --num_workers 1
-python test_partseg.py --normal --log_dir pointnet2_part_seg_msg --num_workers 1
+python train_partseg.py --model pointnet2_part_seg_msg --log_dir pointnet2_part_seg_msg --num_workers 0
+python test_partseg.py --log_dir pointnet2_part_seg_msg --num_workers 0
 ```
 
 
