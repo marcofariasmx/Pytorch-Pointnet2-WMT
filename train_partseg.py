@@ -43,13 +43,13 @@ LabelPC Path:
 
 Please make sure you modify this following line and change it to your current PointBluePython directory in your system
 """
-labelpc_path = sys_path + ['Users', 'M0x1', 'PycharmProjects', 'PointBluePython']
-labelpc_path = os.path.join(*labelpc_path)
+labelpc_path = os.path.abspath('../PointBluePython')
 
 if os.path.exists(labelpc_path):
     print(f"{labelpc_path} exists!")
 else:
-    print(f"Warning: {labelpc_path} does not exist!")
+    print(f"Error: {labelpc_path} does not exist!")
+    exit(1)
 
 
 sys.path.append(labelpc_path)
@@ -57,9 +57,10 @@ sys.path.append(labelpc_path)
 try:
     from MachineLearningAutomation.Datasets import RackPartSegDataset
     from WarehouseDataStructures.Facility import Facility
-    print("LabelPc Imports successful!")
+    print("LabelPC Imports successful!")
 except ImportError as e:
     print(f"Error during import: {e}")
+    exit(2)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -97,8 +98,11 @@ def parse_args():
     parser.add_argument('--lr_decay', type=float, default=0.5, help='decay rate for lr decay')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
+    parser.add_argument('--train_test_split', type=float, default=0.7,
+                        help='Fraction of facilities to use for training vs. testing')
     parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
                         help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
+    parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
 
     return parser.parse_args()
 
@@ -115,28 +119,25 @@ def get_json_files_path(facilities_path: str):
     return json_files_path
 
 
-def split_lists(input_lists, split_percentage: float = .7):
+def split_list(input_list, split_percentage: float = .7):
     """
     Method to create training and testing datasets lists based on lists of facilities provided
 
     If a -1 is given as input for split_percentage, then it proceeds to return the input list repeated.
     """
-    if split_percentage == -1:
-        return input_lists, input_lists
+    if split_percentage == -1 or len(input_list) == 1:
+        return input_list, input_list
 
     if split_percentage < 0 or split_percentage > 1:
         raise ValueError("Split percentage should be between 0 and 1.")
 
-    first_list = []
-    second_list = []
+    split_index = int(len(input_list) * split_percentage)
 
-    for idx in range(len(input_lists)):
-        split_index = int(len(input_lists[idx]) * split_percentage)
+    # Must have at least 1 item in each list
+    if split_index == len(input_list):
+        split_index = split_index - 1
 
-        first_list.extend(input_lists[idx][:split_index])
-        second_list.extend(input_lists[idx][split_index:])
-
-    return first_list, second_list
+    return input_list[:split_index], input_list[split_index:]
 
 def main(args):
     def log_string(str):
@@ -181,20 +182,38 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    if args.facilities_dirs:
-        facilities_jsons = []
-        for facility_dir_path in args.facilities_dirs:
-            facilities_jsons.append(get_json_files_path(facility_dir_path))
+    # Grab path to merged JSON file for each facility
+    facilities_jsons = []
 
-        train_set_facilities, test_set_facilities = split_lists(facilities_jsons, split_percentage=.7)
+    if args.facilities_dirs:
+        for facility_dir in args.facilities_dirs:
+            merged_json = Facility.find_merged_json_file(facility_dir)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
+
+    elif args.data_dir:
+        for facility_dir in os.listdir(args.data_dir):
+            full_facility_path = os.path.join(args.data_dir, facility_dir)
+            merged_json = Facility.find_merged_json_file(full_facility_path)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
 
     else:
         print("No facilities directories given, starting training on test data")
-
-        labelpc_test_facility = os.path.join(labelpc_path, 'Test Facilities', 'Test Facility - Annotated',
-                                             'Data Files (Expert only)', 'JSON Files',
-                                             'stilwell_3.1cm_normals_no_perimeter.json')
-        train_set_facilities, test_set_facilities = split_lists([labelpc_test_facility], split_percentage=-1)
+        facility_dir = os.path.join(
+            labelpc_path,
+            'Test Facilities',
+            'Test Facility - Annotated',
+        )
+        merged_json = Facility.find_merged_json_file(facility_dir)
+        if merged_json:
+            facilities_jsons.append(merged_json)
+        else:
+            print(f'Could not find merged json file in {facility_dir}')
 
 
         # # Custom testing data:
@@ -206,6 +225,14 @@ def main(args):
         # facilities2_list = get_json_files_path(facilities2_path)
         # train_set_facilities, test_set_facilities = split_lists([facilities1_list, facilities2_list], .7)
 
+
+    # Check for JSONs
+    if len(facilities_jsons) == 0:
+        print('Could not find any merged JSON files')
+        exit(3)
+
+    # Split the facilities into training and testing data
+    train_set_facilities, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
 
     print("Train set facilities: \n", train_set_facilities)
     print("Test set facilities: \n", test_set_facilities)
