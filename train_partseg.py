@@ -82,7 +82,7 @@ def to_categorical(y, num_classes, device):
 def parse_args():
     parser = argparse.ArgumentParser('Model')
     parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
-    parser.add_argument('--batch_size', type=int, default=14, help='batch Size during training')
+    parser.add_argument('--batch_size', type=int, default=16, help='batch Size during training')
     parser.add_argument('--epoch', default=251, type=int, help='epoch to run')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='initial learning rate')
     parser.add_argument('--gpu', type=str, default='0', help='specify GPU devices')
@@ -201,7 +201,7 @@ def main(args):
         # facilities1_path = sys_path + ['Users', 'M0x1', 'OneDrive', 'MachineLearningAutomation', 'FacilitiesX10New']
         # facilities1_path = os.path.join(*facilities1_path)
         # facilities1_list = get_json_files_path(facilities1_path)
-        # facilities2_path = ['Users', 'M0x1', 'Downloads', 'Facilities_NET_x31']
+        # facilities2_path = sys_path + ['Users', 'M0x1', 'Downloads', 'Facilities_NET_x31']
         # facilities2_path = os.path.join(*facilities2_path)
         # facilities2_list = get_json_files_path(facilities2_path)
         # train_set_facilities, test_set_facilities = split_lists([facilities1_list, facilities2_list], .7)
