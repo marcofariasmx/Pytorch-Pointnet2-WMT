@@ -16,6 +16,7 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 from data_utils.ShapeNetDataLoader import PartNormalDataset
+
 # Get the system's platform
 import platform
 
@@ -24,24 +25,42 @@ system_platform = platform.system()
 # Check if it's Windows or Linux
 if system_platform == "Windows":
     print("The operating system is Windows.")
-    sys.path.append('C:/Users/M0x1/PycharmProjects/PointBluePython')
-    facilities1_path = 'C:\\Users\\M0x1/OneDrive\\MachineLearningAutomation\\FacilitiesX10New\\'
-    facilities2_path = 'C:\\Users\\M0x1/Downloads\\Facilities_NET_x31\\'
-    merged_json = "C:/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+    sys_path = ['C:\\']
+
 
 elif system_platform == "Linux":
     print("The operating system is Linux.")
-    sys.path.append('/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/')
-    facilities1_path = '/mnt/c/Users/M0x1/OneDrive/MachineLearningAutomation/FacilitiesX10New/'
-    facilities2_path = '/mnt/c/Users/M0x1/Downloads/Facilities_NET_x31/'
-    merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
+    sys_path = ['/mnt', 'c']
 
 else:
     print("The operating system is neither Windows nor Linux.")
 
-from MachineLearningAutomation.Datasets import RackPartSegDataset
-from WarehouseDataStructures.Facility import Facility
 
+"""
+LabelPC Path:
+
+*****Important for proper functioning of the program*****
+
+Please make sure you modify this following line and change it to your current PointBluePython directory in your system
+"""
+labelpc_path = os.path.abspath('../PointBluePython')
+
+if os.path.exists(labelpc_path):
+    print(f"{labelpc_path} exists!")
+else:
+    print(f"Error: {labelpc_path} does not exist!")
+    exit(1)
+
+
+sys.path.append(labelpc_path)
+
+try:
+    from MachineLearningAutomation.Datasets import RackPartSegDataset
+    from WarehouseDataStructures.Facility import Facility
+    print("LabelPC Imports successful!")
+except ImportError as e:
+    print(f"Error during import: {e}")
+    exit(2)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -63,21 +82,27 @@ def to_categorical(y, num_classes, device):
 
 def parse_args():
     parser = argparse.ArgumentParser('Model')
-    parser.add_argument('--model', type=str, default='pointnet_part_seg', help='model name')
-    parser.add_argument('--batch_size', type=int, default=14, help='batch Size during training')
+    parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
+    parser.add_argument('--batch_size', type=int, default=16, help='batch Size during training')
     parser.add_argument('--epoch', default=251, type=int, help='epoch to run')
     parser.add_argument('--learning_rate', default=0.001, type=float, help='initial learning rate')
     parser.add_argument('--gpu', type=str, default='0', help='specify GPU devices')
     parser.add_argument('--optimizer', type=str, default='Adam', help='Adam or SGD')
     parser.add_argument('--log_dir', type=str, default=None, help='log path')
     parser.add_argument('--decay_rate', type=float, default=1e-4, help='weight decay')
-    parser.add_argument('--npoint', type=int, default=2048, help='point Number')
+    parser.add_argument('--npoint', type=int, default=2048, help='number of points to process per chunk/batch')
+    parser.add_argument('--points_per_scan', type=int, default=1000000, help='number of points to load for each scan\'s pointcloud')
     parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--step_size', type=int, default=20, help='decay step for lr decay')
     parser.add_argument('--num_workers', type=int, default=0, help='number of cpu threads to process data')
     parser.add_argument('--lr_decay', type=float, default=0.5, help='decay rate for lr decay')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
+    parser.add_argument('--train_test_split', type=float, default=0.7,
+                        help='Fraction of facilities to use for training vs. testing')
+    parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
+                        help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
+    parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
 
     return parser.parse_args()
 
@@ -86,28 +111,33 @@ def get_json_files_path(facilities_path: str):
 
     json_files_path = []
     for annotated_facility in facilities_list:
-        files_names = os.listdir(facilities_path + annotated_facility)
+        files_names = os.listdir(os.path.join(facilities_path, annotated_facility))
         for file_name in files_names:
             if file_name.endswith('.json'):
-                json_files_path.append(facilities_path + annotated_facility + '/' + file_name)
+                json_files_path.append(os.path.join(facilities_path, annotated_facility, file_name))
 
     return json_files_path
 
 
-def split_lists(input_lists, split_percentage:float = .7):
+def split_list(input_list, split_percentage: float = .7):
+    """
+    Method to create training and testing datasets lists based on lists of facilities provided
+
+    If a -1 is given as input for split_percentage, then it proceeds to return the input list repeated.
+    """
+    if split_percentage == -1 or len(input_list) == 1:
+        return input_list, input_list
+
     if split_percentage < 0 or split_percentage > 1:
         raise ValueError("Split percentage should be between 0 and 1.")
 
-    first_list = []
-    second_list = []
+    split_index = int(len(input_list) * split_percentage)
 
-    for idx in range(len(input_lists)):
-        split_index = int(len(input_lists[idx]) * split_percentage)
+    # Must have at least 1 item in each list
+    if split_index == len(input_list):
+        split_index = split_index - 1
 
-        first_list.extend(input_lists[idx][:split_index])
-        second_list.extend(input_lists[idx][split_index:])
-
-    return first_list, second_list
+    return input_list[:split_index], input_list[split_index:]
 
 def main(args):
     def log_string(str):
@@ -152,24 +182,71 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    # facilities1 = get_json_files_path(facilities1_path)
-    # facilities2 = get_json_files_path(facilities2_path)
-    #
-    # train_set_facilities, test_set_facilities = split_lists([facilities1, facilities2], .7)
-    #
-    # print("Train set facilities: \n", train_set_facilities)
-    # print("Test set facilities: \n", test_set_facilities)
+    # Grab path to merged JSON file for each facility
+    facilities_jsons = []
 
-    #train_total_facilities = len(train_set_facilities)
+    if args.facilities_dirs:
+        for facility_dir in args.facilities_dirs:
+            merged_json = Facility.find_merged_json_file(facility_dir)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
+
+    elif args.data_dir:
+        for facility_dir in os.listdir(args.data_dir):
+            full_facility_path = os.path.join(args.data_dir, facility_dir)
+            merged_json = Facility.find_merged_json_file(full_facility_path)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
+
+    else:
+        print("No facilities directories given, starting training on test data")
+        facility_dir = os.path.join(
+            labelpc_path,
+            'Test Facilities',
+            'Test Facility - Annotated',
+        )
+        merged_json = Facility.find_merged_json_file(facility_dir)
+        if merged_json:
+            facilities_jsons.append(merged_json)
+        else:
+            print(f'Could not find merged json file in {facility_dir}')
+
+
+        # # Custom testing data:
+        # facilities1_path = sys_path + ['Users', 'M0x1', 'OneDrive', 'MachineLearningAutomation', 'FacilitiesX10New']
+        # facilities1_path = os.path.join(*facilities1_path)
+        # facilities1_list = get_json_files_path(facilities1_path)
+        # facilities2_path = sys_path + ['Users', 'M0x1', 'Downloads', 'Facilities_NET_x31']
+        # facilities2_path = os.path.join(*facilities2_path)
+        # facilities2_list = get_json_files_path(facilities2_path)
+        # train_set_facilities, test_set_facilities = split_lists([facilities1_list, facilities2_list], .7)
+
+
+    # Check for JSONs
+    if len(facilities_jsons) == 0:
+        print('Could not find any merged JSON files')
+        exit(3)
+
+    # Split the facilities into training and testing data
+    train_set_facilities, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
+
+    print("Train set facilities: \n", train_set_facilities)
+    print("Test set facilities: \n", test_set_facilities)
+
+    # Load the data
     train_facilities = []
     test_facilities = []
 
-    for file in tqdm([merged_json], desc="Loading Train Facilities", unit="facility"):
-        facility = Facility(files=file, points_per_scan=10000000)
+    for file in tqdm(train_set_facilities, desc="Loading Train Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=args.points_per_scan)
         train_facilities.append(facility)
 
-    for file in tqdm([merged_json], desc="Loading Test Facilities", unit="facility"):
-        facility = Facility(files=file, points_per_scan=10000000)
+    for file in tqdm(test_set_facilities, desc="Loading Test Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=args.points_per_scan)
         test_facilities.append(facility)
 
     TRAIN_DATASET = RackPartSegDataset(facilities=train_facilities, points_per_chunk=args.npoint, include_bulk=False)
@@ -217,7 +294,11 @@ def main(args):
     shutil.copy('models/%s.py' % args.model, str(exp_dir))
     shutil.copy('models/pointnet2_utils.py', str(exp_dir))
 
-    classifier = MODEL.get_model(num_classes=num_classes, num_parts=num_part, custom_data=custom_data, normal_channel=args.normal).to(device)
+    if args.model == 'pointnet2_part_seg_msg':
+        classifier = MODEL.get_model(num_classes=num_classes, num_parts=num_part, custom_data=custom_data, normal_channel=args.normal).to(device)
+    else:
+        classifier = MODEL.get_model(num_part, normal_channel=args.normal).to(device)
+
     criterion = MODEL.get_loss().to(device)
     classifier.apply(inplace_relu)
 
@@ -374,7 +455,8 @@ def main(args):
             test_metrics['class_avg_accuracy'] = np.mean(
                 np.array(total_correct_class) / np.array(total_seen_class, dtype=float))
             for cat in sorted(shape_ious.keys()):
-                log_string('eval mIoU of %s %f' % (cat + ' ' * (14 - len(cat)), shape_ious[cat]))
+                space_separator = 14
+                log_string('eval mIoU of %s %f' % (cat + ' ' * (space_separator - len(cat)), shape_ious[cat]))
             test_metrics['class_avg_iou'] = mean_shape_ious
             test_metrics['inctance_avg_iou'] = np.mean(all_shape_ious)
 
