@@ -5,6 +5,7 @@ Date: Nov 2019
 import argparse
 import os
 from data_utils.ShapeNetDataLoader import PartNormalDataset
+from data_utils.utils import split_list
 import torch
 import logging
 import sys
@@ -82,6 +83,14 @@ def parse_args():
     parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
+    parser.add_argument('--npoint', type=int, default=2048, help='number of points to process per chunk/batch')
+    parser.add_argument('--points_per_scan', type=int, default=1000000, help='number of points to load for each scan\'s pointcloud')
+    parser.add_argument('--train_test_split', type=float, default=0.7,
+                        help='Fraction of facilities to use for training vs. testing')
+    parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
+                        help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
+    parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
+
     return parser.parse_args()
 
 
@@ -116,29 +125,67 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    labelpc_test_facility = [os.path.join(labelpc_path, 'Test Facilities', 'Test Facility - Annotated',
-                                         'Data Files (Expert only)', 'JSON Files',
-                                         'stilwell_3.1cm_normals_no_perimeter.json')]
-    test_facilities = []
-    for file in tqdm([labelpc_test_facility], desc="Loading Facilities to predict", unit="facility"):
-        facility = Facility(files=file, points_per_scan=10000000)
-        test_facilities.append(facility)
+    # Grab path to merged JSON file for each facility
+    facilities_jsons = []
 
-    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.num_point, include_bulk=False)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
-                                                 num_workers=args.num_workers)
+    if args.facilities_dirs:
+        for facility_dir in args.facilities_dirs:
+            merged_json = Facility.find_merged_json_file(facility_dir)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
 
-    #testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False, num_workers=4)
+    elif args.data_dir:
+        for facility_dir in os.listdir(args.data_dir):
+            full_facility_path = os.path.join(args.data_dir, facility_dir)
+            merged_json = Facility.find_merged_json_file(full_facility_path)
+            if merged_json:
+                facilities_jsons.append(merged_json)
+            else:
+                print(f'Could not find merged json file in {facility_dir}')
+
+    else:
+        print("No facilities directories given, starting training on test data")
+        facility_dir = os.path.join(
+            labelpc_path,
+            'Test Facilities',
+            'Test Facility - Annotated',
+        )
+        merged_json = Facility.find_merged_json_file(facility_dir)
+        if merged_json:
+            facilities_jsons.append(merged_json)
+        else:
+            print(f'Could not find merged json file in {facility_dir}')
+
+        # Check for JSONs
+        if len(facilities_jsons) == 0:
+            print('Could not find any merged JSON files')
+            exit(3)
+
+        # Split the facilities into training and testing data
+        _, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
+
+        print("Test set facilities: \n", test_set_facilities)
+
+        # Load the data
+        test_facilities = []
+
+        for file in tqdm(test_set_facilities, desc="Loading Test Facilities", unit="facility"):
+            facility = Facility(files=file, points_per_scan=args.points_per_scan)
+            test_facilities.append(facility)
+
+
+        TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
+
+
+        testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
+                                                     num_workers=args.num_workers)
+
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
     original_classes_dict = TEST_DATASET.get_classes()
     num_different_parts = len(TEST_DATASET.get_parts_dict())
-
-    # seg_classes = {'Earphone': [16, 17, 18], 'Motorbike': [30, 31, 32, 33, 34, 35], 'Rocket': [41, 42, 43],
-    #                'Car': [8, 9, 10, 11], 'Laptop': [28, 29], 'Cap': [6, 7], 'Skateboard': [44, 45, 46],
-    #                'Mug': [36, 37],
-    #                'Guitar': [19, 20, 21], 'Bag': [4, 5], 'Lamp': [24, 25, 26, 27], 'Table': [47, 48, 49],
-    #                'Airplane': [0, 1, 2, 3], 'Pistol': [38, 39, 40], 'Chair': [12, 13, 14, 15], 'Knife': [22, 23]}
 
     custom_data = True
     if custom_data:
@@ -171,7 +218,6 @@ def main(args):
         classifier = MODEL.get_model(num_classes=num_classes, num_parts=num_part, custom_data=custom_data, normal_channel=args.normal).to(device)
     else:
         classifier = MODEL.get_model(num_part, normal_channel=args.normal).to(device)
-    classifier = MODEL.get_model(num_part, normal_channel=args.normal).cuda()
     checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')
     classifier.load_state_dict(checkpoint['model_state_dict'])
 
