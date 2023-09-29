@@ -11,8 +11,43 @@ import sys
 import importlib
 from tqdm import tqdm
 import numpy as np
+import platform
 
-sys.path.append('/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/')
+# Get the system's platform
+system_platform = platform.system()
+
+# Check if it's Windows or Linux
+if system_platform == "Windows":
+    print("The operating system is Windows.")
+    sys_path = ['C:\\']
+
+
+elif system_platform == "Linux":
+    print("The operating system is Linux.")
+    sys_path = ['/mnt', 'c']
+
+else:
+    print("The operating system is neither Windows nor Linux.")
+
+
+"""
+LabelPC Path:
+
+*****Important for proper functioning of the program*****
+
+Please make sure you modify this following line and change it to your current PointBluePython directory in your system
+"""
+labelpc_path = sys_path + ['Users', 'M0x1', 'PycharmProjects', 'PointBluePython']
+labelpc_path = os.path.join(*labelpc_path)
+
+if os.path.exists(labelpc_path):
+    print(f"{labelpc_path} exists!")
+else:
+    print(f"Warning: {labelpc_path} does not exist!")
+
+
+sys.path.append(labelpc_path)
+
 from MachineLearningAutomation.Datasets import RackPartSegDataset
 from WarehouseDataStructures.Facility import Facility
 
@@ -36,9 +71,12 @@ def parse_args():
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
     parser.add_argument('--num_point', type=int, default=2048, help='point Number')
     parser.add_argument('--log_dir', type=str, default='pointnet2_part_seg_msg', help='experiment root')
-    parser.add_argument('--normal', action='store_true', default=False, help='use normals')
+    parser.add_argument('--normal', action='store_true', default=True, help='use normals')
     parser.add_argument('--num_votes', type=int, default=3, help='aggregate segmentation scores with voting')
     parser.add_argument('--num_workers', type=int, default=0, help='number of cpu threads to process data')
+    parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
+    parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
+                        help='Device to use (cuda or cpu)')
     return parser.parse_args()
 
 
@@ -48,8 +86,18 @@ def main(args):
         print(str)
 
     '''HYPER PARAMETER'''
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
     experiment_dir = 'log/part_seg/' + args.log_dir
+
+    '''HYPER PARAMETER'''
+    if args.device == 'cuda' and not torch.cuda.is_available():
+        raise ValueError(
+            "CUDA is not available. Please use --device cpu or make sure CUDA is installed and compatible.")
+
+    if args.device == 'cuda':
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
 
     '''LOG'''
     args = parse_args()
@@ -63,19 +111,15 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    root = 'data/shapenetcore_partanno_segmentation_benchmark_v0_normal/'
-    merged_json = "/mnt/c/Users/M0x1/PycharmProjects/PointBluePython/Test Facilities/Test Facility - Annotated/Data Files (Expert only)/JSON Files/stilwell_3.1cm_normals_no_perimeter.json"
-
-
-    #TEST_DATASET = PartNormalDataset(root=root, npoints=args.num_point, split='test', normal_channel=args.normal)
-    #TEST_DATASET = RackPartSegDataset(files=merged_json, points_per_scan=10000000, npoints=2500)
-
+    labelpc_test_facility = [os.path.join(labelpc_path, 'Test Facilities', 'Test Facility - Annotated',
+                                         'Data Files (Expert only)', 'JSON Files',
+                                         'stilwell_3.1cm_normals_no_perimeter.json')]
     test_facilities = []
-    for file in tqdm([merged_json], desc="Loading Facilities to predict", unit="facility"):
+    for file in tqdm([labelpc_test_facility], desc="Loading Facilities to predict", unit="facility"):
         facility = Facility(files=file, points_per_scan=10000000)
         test_facilities.append(facility)
 
-    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=1000000, include_bulk=False)
+    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.num_point, include_bulk=False)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
                                                  num_workers=args.num_workers)
 
@@ -83,6 +127,7 @@ def main(args):
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
     original_classes_dict = TEST_DATASET.get_classes()
+    num_different_parts = len(TEST_DATASET.get_parts_dict())
 
     # seg_classes = {'Earphone': [16, 17, 18], 'Motorbike': [30, 31, 32, 33, 34, 35], 'Rocket': [41, 42, 43],
     #                'Car': [8, 9, 10, 11], 'Laptop': [28, 29], 'Cap': [6, 7], 'Skateboard': [44, 45, 46],
@@ -90,11 +135,19 @@ def main(args):
     #                'Guitar': [19, 20, 21], 'Bag': [4, 5], 'Lamp': [24, 25, 26, 27], 'Table': [47, 48, 49],
     #                'Airplane': [0, 1, 2, 3], 'Pistol': [38, 39, 40], 'Chair': [12, 13, 14, 15], 'Knife': [22, 23]}
 
+    custom_data = True
+    if custom_data:
+        num_classes = len(original_classes_dict)
+        num_part = num_different_parts * num_classes
+    else:
+        num_classes = 16
+        num_part = 50
+
     seg_classes = {}
     counter = 0
     for key, value in original_classes_dict.items():
-        seg_classes[key] = list(range(counter, counter + 3))
-        counter += 3
+        seg_classes[key] = list(range(counter, counter + num_different_parts))
+        counter += num_different_parts
 
     print(seg_classes)
 
@@ -105,12 +158,14 @@ def main(args):
 
     print(seg_label_to_cat)
 
-    num_classes = 16
-    num_part = 50
 
     '''MODEL LOADING'''
     model_name = os.listdir(experiment_dir + '/logs')[0].split('.')[0]
     MODEL = importlib.import_module(model_name)
+    if args.model == 'pointnet2_part_seg_msg':
+        classifier = MODEL.get_model(num_classes=num_classes, num_parts=num_part, custom_data=custom_data, normal_channel=args.normal).to(device)
+    else:
+        classifier = MODEL.get_model(num_part, normal_channel=args.normal).to(device)
     classifier = MODEL.get_model(num_part, normal_channel=args.normal).cuda()
     checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')
     classifier.load_state_dict(checkpoint['model_state_dict'])
@@ -133,7 +188,7 @@ def main(args):
                                                       smoothing=0.9):
             batchsize, num_point, _ = points.size()
             cur_batch_size, NUM_POINT, _ = points.size()
-            points, label, target = points.float().cuda(), label.long().cuda(), target.long().cuda()
+            points, label, target = points.float().cuda(), label.long().cuda(), target.long().cuda() #points are actual points (xyz, rgb), label stands for the class num and target stands for the part num
             points = points.transpose(2, 1)
             vote_pool = torch.zeros(target.size()[0], target.size()[1], num_part).cuda()
 
