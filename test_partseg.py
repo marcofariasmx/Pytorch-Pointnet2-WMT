@@ -73,11 +73,11 @@ def to_categorical(y, num_classes):
 def parse_args():
     '''PARAMETERS'''
     parser = argparse.ArgumentParser('PointNet')
-    parser.add_argument('--batch_size', type=int, default=24, help='batch size in testing')
+    parser.add_argument('--batch_size', type=int, default=16, help='batch size in testing')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
     parser.add_argument('--num_point', type=int, default=2048, help='point Number')
     parser.add_argument('--log_dir', type=str, default='pointnet2_part_seg_msg', help='experiment root')
-    parser.add_argument('--normal', action='store_true', default=True, help='use normals')
+    parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--num_votes', type=int, default=3, help='aggregate segmentation scores with voting')
     parser.add_argument('--num_workers', type=int, default=0, help='number of cpu threads to process data')
     parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
@@ -237,11 +237,13 @@ def main(args):
         classifier = classifier.eval()
         for batch_id, (points, label, target) in tqdm(enumerate(testDataLoader), total=len(testDataLoader),
                                                       smoothing=0.9):
+            if not args.normal: #if normals are not taken into account, only process the first 3 numbers (x,y,z).
+                points = points[:, :, :3]
             batchsize, num_point, _ = points.size()
             cur_batch_size, NUM_POINT, _ = points.size()
-            points, label, target = points.float().cuda(), label.long().cuda(), target.long().cuda() #points are actual points (xyz, rgb), label stands for the class num and target stands for the part num
+            points, label, target = points.float().to(device), label.long().to(device), target.long().to(device) #points are actual points (xyz, rgb), label stands for the class num and target stands for the part num
             points = points.transpose(2, 1)
-            vote_pool = torch.zeros(target.size()[0], target.size()[1], num_part).cuda()
+            vote_pool = torch.zeros(target.size()[0], target.size()[1], num_part).to(device)
 
             for _ in range(args.num_votes):
                 seg_pred, _ = classifier(points, to_categorical(label, num_classes))
@@ -288,7 +290,7 @@ def main(args):
         mean_shape_ious = np.mean(list(shape_ious.values()))
         test_metrics['accuracy'] = total_correct / float(total_seen)
         test_metrics['class_avg_accuracy'] = np.mean(
-            np.array(total_correct_class) / np.array(total_seen_class, dtype=np.float))
+            np.array(total_correct_class) / np.array(total_seen_class, dtype=float))
         for cat in sorted(shape_ious.keys()):
             space_separator = 14
             log_string('eval mIoU of %s %f' % (cat + ' ' * (space_separator - len(cat)), shape_ious[cat]))

@@ -347,7 +347,6 @@ def main(args):
         for i, (points, label, target) in tqdm(enumerate(trainDataLoader), total=len(trainDataLoader), smoothing=0.9):
             optimizer.zero_grad()
 
-
             points = points.data.numpy()
             if not args.normal: #if normals are not taken into account, only process the first 3 numbers (x,y,z).
                 points = points[:, :, :3]
