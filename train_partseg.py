@@ -16,6 +16,7 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 from data_utils.ShapeNetDataLoader import PartNormalDataset
+from data_utils.utils import split_list
 
 # Get the system's platform
 import platform
@@ -118,26 +119,6 @@ def get_json_files_path(facilities_path: str):
 
     return json_files_path
 
-
-def split_list(input_list, split_percentage: float = .7):
-    """
-    Method to create training and testing datasets lists based on lists of facilities provided
-
-    If a -1 is given as input for split_percentage, then it proceeds to return the input list repeated.
-    """
-    if split_percentage == -1 or len(input_list) == 1:
-        return input_list, input_list
-
-    if split_percentage < 0 or split_percentage > 1:
-        raise ValueError("Split percentage should be between 0 and 1.")
-
-    split_index = int(len(input_list) * split_percentage)
-
-    # Must have at least 1 item in each list
-    if split_index == len(input_list):
-        split_index = split_index - 1
-
-    return input_list[:split_index], input_list[split_index:]
 
 def main(args):
     def log_string(str):
@@ -365,7 +346,6 @@ def main(args):
         '''learning one epoch'''
         for i, (points, label, target) in tqdm(enumerate(trainDataLoader), total=len(trainDataLoader), smoothing=0.9):
             optimizer.zero_grad()
-
 
             points = points.data.numpy()
             if not args.normal: #if normals are not taken into account, only process the first 3 numbers (x,y,z).
