@@ -13,6 +13,8 @@ import importlib
 from tqdm import tqdm
 import numpy as np
 import platform
+import numpy as np
+import laspy
 
 # Get the system's platform
 system_platform = platform.system()
@@ -83,7 +85,7 @@ def parse_args():
     parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
-    parser.add_argument('--npoint', type=int, default=2048, help='number of points to process per chunk/batch')
+    parser.add_argument('--npoint', type=int, default=500, help='number of points to process for each rack per chunk/batch')
     parser.add_argument('--points_per_scan', type=int, default=1000000, help='number of points to load for each scan\'s pointcloud')
     parser.add_argument('--train_test_split', type=float, default=0.7,
                         help='Fraction of facilities to use for training vs. testing')
@@ -92,6 +94,51 @@ def parse_args():
     parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
 
     return parser.parse_args()
+
+
+def save_as_las(data, filename="new_file.las"):
+    """
+    Save ndarray data as a LAS file.
+
+    Parameters:
+    - data: ndarray of shape (I, J, K)
+    - filename: output filename
+    """
+
+    # 1. Create a new header
+    header = laspy.LasHeader(point_format=3, version="1.2")
+    header.add_extra_dim(laspy.ExtraBytesParams(name="label", type=np.int32))
+    #header.offsets = np.min(data, axis=0)
+
+    # 2. Create a Las
+    las = laspy.LasData(header)
+
+    num_points = np.prod(data.shape[:-1])
+    las.x = np.zeros(num_points, dtype=np.int32)
+    las.y = np.zeros(num_points, dtype=np.int32)
+    las.z = np.zeros(num_points, dtype=np.int32)
+    las.red = np.zeros(num_points, dtype=np.uint16)
+    las.green = np.zeros(num_points, dtype=np.uint16)
+    las.blue = np.zeros(num_points, dtype=np.uint16)
+    las.label = np.zeros(num_points, dtype=np.uint8)
+
+    index = 0
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            for k in range(data.shape[2]):
+                point = data[i, j, k]
+                las.x[index] = point[0]
+                las.y[index] = point[1]
+                las.z[index] = point[2]
+                # check if RGB values are provided, else use default 0 values
+                las.red[index] = point[3] if len(point) == 7 else 0
+                las.green[index] = point[4] if len(point) == 7 else 0
+                las.blue[index] = point[5] if len(point) == 7 else 0
+                # store label in user_data
+                las.label[index] = point[-1]
+                index += 1
+
+    las.write(filename)
 
 
 def main(args):
@@ -235,6 +282,11 @@ def main(args):
                 seg_label_to_cat[label] = cat
 
         classifier = classifier.eval()
+        # label = part type (drive_in_rack, select_rack, etc).
+        # target = part segment type (clutter, shelf, pole, etc).
+        # each batch processes up to X amount of rack simultaneously
+        pred_results = []
+
         for batch_id, (points, label, target) in tqdm(enumerate(testDataLoader), total=len(testDataLoader),
                                                       smoothing=0.9):
             if not args.normal: #if normals are not taken into account, only process the first 3 numbers (x,y,z).
@@ -245,20 +297,34 @@ def main(args):
             points = points.transpose(2, 1)
             vote_pool = torch.zeros(target.size()[0], target.size()[1], num_part).to(device)
 
+            # Perform the prediction X amount of times (number of votes) in order to
             for _ in range(args.num_votes):
                 seg_pred, _ = classifier(points, to_categorical(label, num_classes))
                 vote_pool += seg_pred
 
+            # Get the average of the predictions.
             seg_pred = vote_pool / args.num_votes
             cur_pred_val = seg_pred.cpu().data.numpy()
             cur_pred_val_logits = cur_pred_val
             cur_pred_val = np.zeros((cur_batch_size, NUM_POINT)).astype(np.int32)
             target = target.cpu().data.numpy()
 
+            # Convert the tensor to ndarray
+            converted_points = points.numpy()
+
+            # Expand dimensions of ndarray_b
+            ndarray_b_exp = np.expand_dims(cur_pred_val, 1)
+
+            # Concatenate along the second dimension
+            points_pred_result = np.concatenate((converted_points, ndarray_b_exp), axis=1)
+
+            # Append the result to the results list
+            pred_results.append(points_pred_result)
+
             for i in range(cur_batch_size):
                 cat = seg_label_to_cat[target[i, 0]]
                 logits = cur_pred_val_logits[i, :, :]
-                cur_pred_val[i, :] = np.argmax(logits[:, seg_classes[cat]], 1) + seg_classes[cat][0]
+                cur_pred_val[i, :] = np.argmax(logits[:, seg_classes[cat]], 1) + seg_classes[cat][0] # understand this line well, here is where the prediction happens.
 
             correct = np.sum(cur_pred_val == target)
             total_correct += correct
@@ -281,6 +347,13 @@ def main(args):
                         part_ious[l - seg_classes[cat][0]] = np.sum((segl == l) & (segp == l)) / float(
                             np.sum((segl == l) | (segp == l)))
                 shape_ious[cat].append(np.mean(part_ious))
+
+        # After the loop, concatenate all the results along the first dimension #(N amount of racks, M amount of dims (x,y,z,r,g,b,label), K amount of points per rack)
+        final_result = np.concatenate(pred_results, axis=0)
+
+        print(final_result.shape)  # Should print (16*num_iterations, 4, 2048)
+
+        save_as_las(final_result, "output.las")
 
         all_shape_ious = []
         for cat in shape_ious.keys():
