@@ -13,7 +13,6 @@ import importlib
 from tqdm import tqdm
 import numpy as np
 import platform
-import numpy as np
 import laspy
 import pandas as pd
 
@@ -74,9 +73,8 @@ def to_categorical(y, num_classes):
 def parse_args():
     '''PARAMETERS'''
     parser = argparse.ArgumentParser('PointNet')
-    parser.add_argument('--batch_size', type=int, default=16, help='batch size in testing')
+    parser.add_argument('--batch_size', type=int, default=1, help='batch size in testing')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
-    parser.add_argument('--num_point', type=int, default=2048, help='point Number')
     parser.add_argument('--log_dir', type=str, default='pointnet2_part_seg_msg', help='experiment root')
     parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--num_votes', type=int, default=3, help='aggregate segmentation scores with voting')
@@ -84,7 +82,7 @@ def parse_args():
     parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
-    parser.add_argument('--npoint', type=int, default=500,
+    parser.add_argument('--npoint', type=int, default=5000,
                         help='number of points to process for each rack per chunk/batch')
     parser.add_argument('--points_per_scan', type=int, default=1000000,
                         help='number of points to load for each scan\'s pointcloud')
@@ -445,12 +443,12 @@ def main(args):
             space_separator = 14
             log_string('eval mIoU of %s %f' % (cat + ' ' * (space_separator - len(cat)), shape_ious[cat]))
         test_metrics['class_avg_iou'] = mean_shape_ious
-        test_metrics['inctance_avg_iou'] = np.mean(all_shape_ious)
+        test_metrics['instance_avg_iou'] = np.mean(all_shape_ious)
 
     log_string('Accuracy is: %.5f' % test_metrics['accuracy'])
     log_string('Class avg accuracy is: %.5f' % test_metrics['class_avg_accuracy'])
     log_string('Class avg mIOU is: %.5f' % test_metrics['class_avg_iou'])
-    log_string('Inctance avg mIOU is: %.5f' % test_metrics['inctance_avg_iou'])
+    log_string('Instance avg mIOU is: %.5f' % test_metrics['instance_avg_iou'])
 
 
 if __name__ == '__main__':
