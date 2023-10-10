@@ -30,7 +30,6 @@ elif system_platform == "Linux":
 else:
     print("The operating system is neither Windows nor Linux.")
 
-
 """
 LabelPC Path:
 
@@ -45,7 +44,6 @@ if os.path.exists(labelpc_path):
 else:
     print(f"Error: {labelpc_path} does not exist!")
     exit(1)
-
 
 sys.path.append(labelpc_path)
 
@@ -75,7 +73,6 @@ def parse_args():
     parser = argparse.ArgumentParser('PointNet')
     parser.add_argument('--batch_size', type=int, default=16, help='batch size in testing')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
-    parser.add_argument('--num_point', type=int, default=2048, help='point Number')
     parser.add_argument('--log_dir', type=str, default='pointnet2_part_seg_msg', help='experiment root')
     parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--num_votes', type=int, default=3, help='aggregate segmentation scores with voting')
@@ -163,24 +160,24 @@ def main(args):
             print('Could not find any merged JSON files')
             exit(3)
 
-        # Split the facilities into training and testing data
-        _, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
+    # Split the facilities into training and testing data
+    _, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
 
-        print("Test set facilities: \n", test_set_facilities)
+    print("Test set facilities: \n", test_set_facilities)
 
-        # Load the data
-        test_facilities = []
+    # Load the data
+    test_facilities = []
 
-        for file in tqdm(test_set_facilities, desc="Loading Test Facilities", unit="facility"):
-            facility = Facility(files=file, points_per_scan=args.points_per_scan)
-            test_facilities.append(facility)
-
-
-        TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
+    for file in tqdm(test_set_facilities, desc="Loading Test Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=args.points_per_scan)
+        test_facilities.append(facility)
 
 
-        testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
-                                                     num_workers=args.num_workers)
+    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
+
+
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
+                                                 num_workers=args.num_workers)
 
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
@@ -235,7 +232,7 @@ def main(args):
                 seg_label_to_cat[label] = cat
 
         classifier = classifier.eval()
-        for batch_id, (points, label, target) in tqdm(enumerate(testDataLoader), total=len(testDataLoader),
+        for batch_id, (points, label, target, points_indices) in tqdm(enumerate(testDataLoader), total=len(testDataLoader),
                                                       smoothing=0.9):
             if not args.normal: #if normals are not taken into account, only process the first 3 numbers (x,y,z).
                 points = points[:, :, :3]
@@ -295,12 +292,12 @@ def main(args):
             space_separator = 14
             log_string('eval mIoU of %s %f' % (cat + ' ' * (space_separator - len(cat)), shape_ious[cat]))
         test_metrics['class_avg_iou'] = mean_shape_ious
-        test_metrics['inctance_avg_iou'] = np.mean(all_shape_ious)
+        test_metrics['instance_avg_iou'] = np.mean(all_shape_ious)
 
     log_string('Accuracy is: %.5f' % test_metrics['accuracy'])
     log_string('Class avg accuracy is: %.5f' % test_metrics['class_avg_accuracy'])
     log_string('Class avg mIOU is: %.5f' % test_metrics['class_avg_iou'])
-    log_string('Inctance avg mIOU is: %.5f' % test_metrics['inctance_avg_iou'])
+    log_string('Instance avg mIOU is: %.5f' % test_metrics['instance_avg_iou'])
 
 
 if __name__ == '__main__':

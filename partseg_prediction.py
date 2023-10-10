@@ -13,6 +13,8 @@ import importlib
 from tqdm import tqdm
 import numpy as np
 import platform
+import laspy
+import pandas as pd
 
 # Get the system's platform
 system_platform = platform.system()
@@ -30,7 +32,6 @@ elif system_platform == "Linux":
 else:
     print("The operating system is neither Windows nor Linux.")
 
-
 """
 LabelPC Path:
 
@@ -45,7 +46,6 @@ if os.path.exists(labelpc_path):
 else:
     print(f"Error: {labelpc_path} does not exist!")
     exit(1)
-
 
 sys.path.append(labelpc_path)
 
@@ -73,9 +73,8 @@ def to_categorical(y, num_classes):
 def parse_args():
     '''PARAMETERS'''
     parser = argparse.ArgumentParser('PointNet')
-    parser.add_argument('--batch_size', type=int, default=16, help='batch size in testing')
+    parser.add_argument('--batch_size', type=int, default=1, help='batch size in testing')
     parser.add_argument('--gpu', type=str, default='0', help='specify gpu device')
-    parser.add_argument('--num_point', type=int, default=2048, help='point Number')
     parser.add_argument('--log_dir', type=str, default='pointnet2_part_seg_msg', help='experiment root')
     parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--num_votes', type=int, default=3, help='aggregate segmentation scores with voting')
@@ -83,8 +82,10 @@ def parse_args():
     parser.add_argument('--model', type=str, default='pointnet2_part_seg_msg', help='model name')
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
-    parser.add_argument('--npoint', type=int, default=2048, help='number of points to process per chunk/batch')
-    parser.add_argument('--points_per_scan', type=int, default=1000000, help='number of points to load for each scan\'s pointcloud')
+    parser.add_argument('--npoint', type=int, default=5000,
+                        help='number of points to process for each rack per chunk/batch')
+    parser.add_argument('--points_per_scan', type=int, default=1000000,
+                        help='number of points to load for each scan\'s pointcloud')
     parser.add_argument('--train_test_split', type=float, default=0.7,
                         help='Fraction of facilities to use for training vs. testing')
     parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
@@ -92,6 +93,95 @@ def parse_args():
     parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
 
     return parser.parse_args()
+
+
+def pop_from_array(arr, n_items):
+    """
+    Pops the first n_items from the array.
+
+    Parameters:
+    - arr: The input ndarray.
+    - n_items: The number of items to pop.
+
+    Returns:
+    - popped_items: The first n_items from the array.
+    - arr: The remaining items after popping.
+    """
+    popped_items = arr[:n_items]
+    arr = arr[n_items:]
+    return popped_items, arr
+
+
+def save_labeled_las(facility: Facility, labeled_points_indices, labeled_data):
+    """
+    Save the labeled point cloud of a facility as a .las file.
+
+    Parameters:
+    - facility (Facility): An instance containing the scan data for the facility.
+    - labeled_points_indices: Indices indicating which points in the facility's point cloud are labeled.
+    - labeled_data: 3D data structure containing labeling information for the specified indices.
+
+    Procedure:
+    1. Extracts the facility's point cloud data and initializes the 'point_label' column with 0s.
+    2. Transposes labeled_data for ease of labeling extraction.
+    3. Extracts and adjusts labels from the transposed labeled_data.
+    4. Assigns these labels to the facility's point cloud data at the specified indices.
+    5. Initializes a .las file header with an additional dimension for 'point_label'.
+    6. Populates the new .las file with the updated point cloud data.
+    7. Determines the filename for saving based on the facility's attributes.
+    8. Checks for the existence of a similarly named file and notifies the user.
+    9. Saves the .las file.
+    """
+
+    # Extract the facility's point cloud and initialize 'point_label' column to 0 (everything)
+    facility_point_cloud_df = facility.scans[0].point_cloud.points
+    facility_point_cloud_df['point_label'] = 0
+
+    # Transpose labeled_data for extraction
+    labeled_data = labeled_data.transpose(0, 2, 1)
+
+    # Extract and adjust labels from the transposed data
+    labeled_values = []
+    for i in range(labeled_data.shape[0]):
+        for j in range(labeled_data.shape[1]):
+            points = labeled_data[i, j]
+            labeled_values.append(points[-1])
+
+    # Add a +1 to shift values. 0 + 1 = clutter, 1+1 = shelf, 2+1 = poles, etc.
+    labeled_values = [x + 1 for x in labeled_values]
+
+    # Assign labels to the facility's point cloud data
+    facility_point_cloud_df.loc[labeled_points_indices, 'point_label'] = labeled_values
+
+    # 1. Initialize a .las file header with an extra dimension for 'point_label'
+    header = laspy.LasHeader(point_format=3, version="1.2")
+    header.add_extra_dim(laspy.ExtraBytesParams(name="point_label", type=np.int32))
+
+    # 2. Create a new .las file and populate it with the updated data
+    las = laspy.LasData(header)
+
+    las.x = (facility_point_cloud_df['x']).astype(np.int32)
+    las.y = (facility_point_cloud_df['y']).astype(np.int32)
+    las.z = (facility_point_cloud_df['z']).astype(np.int32)
+    las.classification = facility_point_cloud_df['class'].astype(np.uint8)
+    las.red = facility_point_cloud_df['r'].astype(np.uint16)
+    las.green = facility_point_cloud_df['g'].astype(np.uint16)
+    las.blue = facility_point_cloud_df['b'].astype(np.uint16)
+    las.user_data = facility_point_cloud_df['user_data'].astype(np.uint8)
+    las.intensity = facility_point_cloud_df['intensity'].astype(np.uint16)
+    las.point_label = facility_point_cloud_df['point_label'].astype(np.uint8)
+
+    # 3. Determine the filename based on the facility's attributes
+    facility_filename = os.path.join(facility.data_path, facility.default_name+'-labeled_points.las')
+
+    # Check and notify if the file already exists
+    if os.path.exists(facility_filename):
+        print(f"'{facility_filename}' exists!")
+    else:
+        print(f"'{facility_filename}' does not exist!")
+
+    # Save the .las file
+    las.write(facility_filename)
 
 
 def main(args):
@@ -163,24 +253,25 @@ def main(args):
             print('Could not find any merged JSON files')
             exit(3)
 
-        # Split the facilities into training and testing data
-        _, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
+    # Split the facilities into training and testing data
+    _, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
 
-        print("Test set facilities: \n", test_set_facilities)
+    print("Test set facilities: \n", test_set_facilities)
 
-        # Load the data
-        test_facilities = []
+    # Load the data
+    test_facilities = []
 
-        for file in tqdm(test_set_facilities, desc="Loading Test Facilities", unit="facility"):
-            facility = Facility(files=file, points_per_scan=args.points_per_scan)
-            test_facilities.append(facility)
+    for file in tqdm(test_set_facilities, desc="Loading Test Facilities", unit="facility"):
+        facility = Facility(files=file, points_per_scan=args.points_per_scan)
+        test_facilities.append(facility)
 
+    TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
 
-        TEST_DATASET = RackPartSegDataset(facilities=test_facilities, points_per_chunk=args.npoint, include_bulk=False)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
+                                                 num_workers=args.num_workers)
 
-
-        testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=args.batch_size, shuffle=False,
-                                                     num_workers=args.num_workers)
+    # create dictionary to associate facilities to their racks to later produce the labeled las file
+    facility_shapes_dict = TEST_DATASET.facility_shapes_dict
 
     log_string("The number of test data is: %d" % len(TEST_DATASET))
 
@@ -210,12 +301,12 @@ def main(args):
 
     print(seg_label_to_cat)
 
-
     '''MODEL LOADING'''
     model_name = os.listdir(experiment_dir + '/logs')[0].split('.')[0]
     MODEL = importlib.import_module(model_name)
     if args.model == 'pointnet2_part_seg_msg':
-        classifier = MODEL.get_model(num_classes=num_classes, num_parts=num_part, custom_data=custom_data, normal_channel=args.normal).to(device)
+        classifier = MODEL.get_model(num_classes=num_classes, num_parts=num_part, custom_data=custom_data,
+                                     normal_channel=args.normal).to(device)
     else:
         classifier = MODEL.get_model(num_part, normal_channel=args.normal).to(device)
     checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')
@@ -235,29 +326,59 @@ def main(args):
                 seg_label_to_cat[label] = cat
 
         classifier = classifier.eval()
-        for batch_id, (points, label, target) in tqdm(enumerate(testDataLoader), total=len(testDataLoader),
-                                                      smoothing=0.9):
-            if not args.normal: #if normals are not taken into account, only process the first 3 numbers (x,y,z).
+
+        pred_results = []
+        racks_points_indices = []
+        """
+        Processing loop description:
+        
+        batch_id: each batch processes up to X amount of objects (racks) simultaneously
+        
+        points: points to be analized through the neuralnetwork
+        label: part type (drive_in_rack, select_rack, etc).
+        target: part segment type (clutter, shelf, pole, etc).
+        points_indices: the indices of the processed points from the originally loaded point cloud
+        """
+        for batch_id, (points, label, target, points_indices) in tqdm(enumerate(testDataLoader),
+                                                                      total=len(testDataLoader),
+                                                                      smoothing=0.9):
+            if not args.normal:  # if normals are not taken into account, only process the first 3 numbers (x,y,z).
                 points = points[:, :, :3]
             batchsize, num_point, _ = points.size()
             cur_batch_size, NUM_POINT, _ = points.size()
-            points, label, target = points.float().to(device), label.long().to(device), target.long().to(device) #points are actual points (xyz, rgb), label stands for the class num and target stands for the part num
+            # points are actual points (xyz, rgb), label stands for the class num and target stands for the part num
+            points, label, target = points.float().to(device), label.long().to(device), target.long().to(device)
             points = points.transpose(2, 1)
             vote_pool = torch.zeros(target.size()[0], target.size()[1], num_part).to(device)
 
+            # Perform the prediction X amount of times (number of votes) in order to
             for _ in range(args.num_votes):
                 seg_pred, _ = classifier(points, to_categorical(label, num_classes))
                 vote_pool += seg_pred
 
+            # Get the average of the predictions.
             seg_pred = vote_pool / args.num_votes
             cur_pred_val = seg_pred.cpu().data.numpy()
             cur_pred_val_logits = cur_pred_val
             cur_pred_val = np.zeros((cur_batch_size, NUM_POINT)).astype(np.int32)
             target = target.cpu().data.numpy()
 
+            # Convert the tensor to ndarray
+            converted_points = points.numpy()
+
+            # Expand dimensions of ndarray_b
+            ndarray_b_exp = np.expand_dims(cur_pred_val, 1)
+
+            # Concatenate along the second dimension
+            points_pred_result = np.concatenate((converted_points, ndarray_b_exp), axis=1)
+
+            # Append the result to the results list
+            pred_results.append(points_pred_result)
+
             for i in range(cur_batch_size):
                 cat = seg_label_to_cat[target[i, 0]]
                 logits = cur_pred_val_logits[i, :, :]
+                # NOTE: In this following line is where the prediction happens.
                 cur_pred_val[i, :] = np.argmax(logits[:, seg_classes[cat]], 1) + seg_classes[cat][0]
 
             correct = np.sum(cur_pred_val == target)
@@ -282,6 +403,33 @@ def main(args):
                             np.sum((segl == l) | (segp == l)))
                 shape_ious[cat].append(np.mean(part_ious))
 
+            racks_points_indices.append(pd.Index(points_indices.numpy().tolist()))
+
+        # After the loop, concatenate all the results along the first dimension #(N amount of racks, M amount of dims
+        # (x,y,z,r,g,b,point_label), K amount of points per rack)
+        final_pred_result = np.concatenate(pred_results, axis=0)
+
+        # Combine the list of Index objects into a single Index object
+        # 1. Flatten the nested list of indices from multiple racks into a single list
+        combined_index = pd.Index([item for index in racks_points_indices for item in index])
+
+        # 2. Convert a multi-level index to a flat index for consistency
+        combined_index = combined_index.to_flat_index()
+
+        # 3. Convert inner lists to tuples to maintain multi-dimensional indices structure
+        combined_index = [tuple(item) if isinstance(item, list) else item for item in combined_index]
+
+        # Process each facility with its newly labeled points and produce a new labeled las file
+        for facility, racks_list in facility_shapes_dict.items():
+
+            facility_labeled_points_indices, combined_index = pop_from_array(combined_index, len(racks_list))
+            facility_labeled_data, final_pred_result = pop_from_array(final_pred_result, len(racks_list))
+
+            flat_combined_index = [item for sublist in facility_labeled_points_indices for item in sublist]
+
+            save_labeled_las(facility=facility, labeled_points_indices=flat_combined_index,
+                             labeled_data=facility_labeled_data)
+
         all_shape_ious = []
         for cat in shape_ious.keys():
             for iou in shape_ious[cat]:
@@ -295,12 +443,12 @@ def main(args):
             space_separator = 14
             log_string('eval mIoU of %s %f' % (cat + ' ' * (space_separator - len(cat)), shape_ious[cat]))
         test_metrics['class_avg_iou'] = mean_shape_ious
-        test_metrics['inctance_avg_iou'] = np.mean(all_shape_ious)
+        test_metrics['instance_avg_iou'] = np.mean(all_shape_ious)
 
     log_string('Accuracy is: %.5f' % test_metrics['accuracy'])
     log_string('Class avg accuracy is: %.5f' % test_metrics['class_avg_accuracy'])
     log_string('Class avg mIOU is: %.5f' % test_metrics['class_avg_iou'])
-    log_string('Inctance avg mIOU is: %.5f' % test_metrics['inctance_avg_iou'])
+    log_string('Instance avg mIOU is: %.5f' % test_metrics['instance_avg_iou'])
 
 
 if __name__ == '__main__':
