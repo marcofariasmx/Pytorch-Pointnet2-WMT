@@ -154,22 +154,22 @@ def save_labeled_las(facility: Facility, labeled_points_indices, labeled_data):
     facility_point_cloud_df.loc[labeled_points_indices, 'point_label'] = labeled_values
 
     # 1. Initialize a .las file header with an extra dimension for 'point_label'
-    header = laspy.LasHeader(point_format=3, version="1.2")
+    header = laspy.LasHeader(point_format=2, version="1.2")
     header.add_extra_dim(laspy.ExtraBytesParams(name="point_label", type=np.int32))
 
     # 2. Create a new .las file and populate it with the updated data
     las = laspy.LasData(header)
 
-    las.x = (facility_point_cloud_df['x']).astype(np.int32)
-    las.y = (facility_point_cloud_df['y']).astype(np.int32)
-    las.z = (facility_point_cloud_df['z']).astype(np.int32)
-    las.classification = facility_point_cloud_df['class'].astype(np.uint8)
-    las.red = facility_point_cloud_df['r'].astype(np.uint16)
-    las.green = facility_point_cloud_df['g'].astype(np.uint16)
-    las.blue = facility_point_cloud_df['b'].astype(np.uint16)
-    las.user_data = facility_point_cloud_df['user_data'].astype(np.uint8)
-    las.intensity = facility_point_cloud_df['intensity'].astype(np.uint16)
-    las.point_label = facility_point_cloud_df['point_label'].astype(np.uint8)
+    las.x = facility_point_cloud_df['x']
+    las.y = facility_point_cloud_df['y']
+    las.z = facility_point_cloud_df['z']
+    las.classification = facility_point_cloud_df['class']
+    las.red = facility_point_cloud_df['r']
+    las.green = facility_point_cloud_df['g']
+    las.blue = facility_point_cloud_df['b']
+    las.user_data = facility_point_cloud_df['user_data']
+    las.intensity = facility_point_cloud_df['intensity']
+    las.point_label = facility_point_cloud_df['point_label']
 
     # 3. Determine the filename based on the facility's attributes
     facility_filename = os.path.join(facility.data_path, facility.default_name+'-labeled_points.las')
