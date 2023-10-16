@@ -91,7 +91,8 @@ def parse_args():
     parser.add_argument('--log_dir', type=str, default=None, help='log path')
     parser.add_argument('--decay_rate', type=float, default=1e-4, help='weight decay')
     parser.add_argument('--npoint', type=int, default=2048, help='number of points to process per chunk/batch')
-    parser.add_argument('--points_per_scan', type=int, default=1000000, help='number of points to load for each scan\'s pointcloud')
+    parser.add_argument('--points_per_scan', type=int, default=1000000,
+                        help='number of points to load for each scan\'s pointcloud')
     parser.add_argument('--normal', action='store_true', default=False, help='use normals')
     parser.add_argument('--step_size', type=int, default=20, help='decay step for lr decay')
     parser.add_argument('--num_workers', type=int, default=0, help='number of cpu threads to process data')
@@ -101,8 +102,10 @@ def parse_args():
     parser.add_argument('--train_test_split', type=float, default=0.7,
                         help='Fraction of facilities to use for training vs. testing')
     parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
-                        help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
-    parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
+                        help='1 to N directories of facilities, '
+                             'e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
+    parser.add_argument('--data_dirs', type=str, nargs='+', default=None,
+                        help='1 to N directories containing several facilities')
 
     return parser.parse_args()
 
@@ -167,20 +170,23 @@ def main(args):
 
     if args.facilities_dirs:
         for facility_dir in args.facilities_dirs:
-            merged_json = Facility.find_merged_json_file(facility_dir)
-            if merged_json:
-                facilities_jsons.append(merged_json)
-            else:
+            try:
+                merged_json = Facility.find_merged_json_file(facility_dir)
+                if merged_json:
+                    facilities_jsons.append(merged_json)
+            except:
                 print(f'Could not find merged json file in {facility_dir}')
 
-    elif args.data_dir:
-        for facility_dir in os.listdir(args.data_dir):
-            full_facility_path = os.path.join(args.data_dir, facility_dir)
-            merged_json = Facility.find_merged_json_file(full_facility_path)
-            if merged_json:
-                facilities_jsons.append(merged_json)
-            else:
-                print(f'Could not find merged json file in {facility_dir}')
+    elif args.data_dirs:
+        for data_dir in args.data_dirs:
+            for facility_dir in os.listdir(data_dir):
+                full_facility_path = os.path.join(data_dir, facility_dir)
+                try:
+                    merged_json = Facility.find_merged_json_file(full_facility_path)
+                    if merged_json:
+                        facilities_jsons.append(merged_json)
+                except:
+                    print(f'Could not find merged json file in {facility_dir}')
 
     else:
         print("No facilities directories given, starting training on test data")
@@ -214,8 +220,8 @@ def main(args):
     # Split the facilities into training and testing data
     train_set_facilities, test_set_facilities = split_list(facilities_jsons, split_percentage=args.train_test_split)
 
-    print("Train set facilities: \n", train_set_facilities)
-    print("Test set facilities: \n", test_set_facilities)
+    print("Train set facilities: ", f"({len(train_set_facilities)})\n", train_set_facilities)
+    print("Test set facilities ", f"({len(test_set_facilities)})\n", test_set_facilities)
 
     # Load the data
     train_facilities = []

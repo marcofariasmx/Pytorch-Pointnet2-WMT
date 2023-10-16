@@ -81,12 +81,15 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cpu', choices=['cuda', 'cpu'],
                         help='Device to use (cuda or cpu)')
     parser.add_argument('--npoint', type=int, default=2048, help='number of points to process per chunk/batch')
-    parser.add_argument('--points_per_scan', type=int, default=1000000, help='number of points to load for each scan\'s pointcloud')
+    parser.add_argument('--points_per_scan', type=int, default=1000000,
+                        help='number of points to load for each scan\'s pointcloud')
     parser.add_argument('--train_test_split', type=float, default=0.7,
                         help='Fraction of facilities to use for training vs. testing')
     parser.add_argument('--facilities_dirs', type=str, nargs='+', default=None,
-                        help='1 to N directories containing facilities, e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
-    parser.add_argument('--data_dir', type=str, help='Directory containing several facilities')
+                        help='1 to N directories of facilities, '
+                             'e.g. c:/users/me/Data/Facility1 c:/users/me/Data/Facility2 d:/data/Facility1')
+    parser.add_argument('--data_dirs', type=str, nargs='+', default=None,
+                        help='1 to N directories containing several facilities')
 
     return parser.parse_args()
 
@@ -127,20 +130,23 @@ def main(args):
 
     if args.facilities_dirs:
         for facility_dir in args.facilities_dirs:
-            merged_json = Facility.find_merged_json_file(facility_dir)
-            if merged_json:
-                facilities_jsons.append(merged_json)
-            else:
+            try:
+                merged_json = Facility.find_merged_json_file(facility_dir)
+                if merged_json:
+                    facilities_jsons.append(merged_json)
+            except:
                 print(f'Could not find merged json file in {facility_dir}')
 
-    elif args.data_dir:
-        for facility_dir in os.listdir(args.data_dir):
-            full_facility_path = os.path.join(args.data_dir, facility_dir)
-            merged_json = Facility.find_merged_json_file(full_facility_path)
-            if merged_json:
-                facilities_jsons.append(merged_json)
-            else:
-                print(f'Could not find merged json file in {facility_dir}')
+    elif args.data_dirs:
+        for data_dir in args.data_dirs:
+            for facility_dir in os.listdir(data_dir):
+                full_facility_path = os.path.join(data_dir, facility_dir)
+                try:
+                    merged_json = Facility.find_merged_json_file(full_facility_path)
+                    if merged_json:
+                        facilities_jsons.append(merged_json)
+                except:
+                    print(f'Could not find merged json file in {facility_dir}')
 
     else:
         print("No facilities directories given, starting training on test data")
@@ -199,6 +205,21 @@ def main(args):
         counter += num_different_parts
 
     print(seg_classes)
+
+    seg_classes = {'select_rack': [0, 1, 2], 'drive_in_rack': [3, 4, 5], 'gravity_feed_rack': [6, 7, 8],
+                   'suspended_rack': [9, 10, 11]}
+    # Initialize dictionaries to store the counts
+    num_part = 0
+
+    # Iterate through the dictionary
+    for key, values in seg_classes.items():
+        # Count the number of values for each key
+        num_part += len(values)
+
+    print(num_part)
+    print(len(seg_classes.keys()))
+
+    num_classes = len(seg_classes.keys())
 
     seg_label_to_cat = {}  # {0:Airplane, 1:Airplane, ...49:Table}
     for cat in seg_classes.keys():

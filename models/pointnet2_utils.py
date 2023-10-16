@@ -6,7 +6,8 @@ import numpy as np
 
 def print_nan(x, name):
     if torch.isnan(x).any():
-        print(f"NaN detected in {name}")
+        #print(f"NaN detected in {name}")
+        pass
 
 # Add this function to check the initialization of BatchNorm layers
 def check_bn_init(model):
